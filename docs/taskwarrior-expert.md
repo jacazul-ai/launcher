@@ -104,12 +104,19 @@ e2e". The agent then follows one procedure, carried by the
 2. Closes the contract with you: behavior, scope, risks, exclusions and
    acceptance criteria, recorded in the DESIGN task.
 3. Waits for your explicit approval. Nothing is implemented before it.
+   The approval gives the agent autonomy for the rest of the initiative:
+   it commits, closes each task with an `OUTCOME` and moves the focus to
+   the next task without asking you each time.
 4. Implements one task at a time, test first, with the gates of whatever
-   is being implemented, atomic commits and an `OUTCOME` on every task.
+   is being implemented and atomic commits: one logical change per
+   commit, so the trail stays easy to review, revert and edit.
 5. Validates, then shows you files, behavior, tests, commits, ticket and
    focus.
 6. Lists the commits and asks: keep the trail and push, or edit it first
    (fixup, squash, drop, reword). Nothing is pushed without your OK.
+
+The autonomy ends at the initiative: pushing, rewriting history, touching
+other initiatives and filling a design gap still need you.
 
 `e2e` alone, or anything about end-to-end tests, does not start it.
 
