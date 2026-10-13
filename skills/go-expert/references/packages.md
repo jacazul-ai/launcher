@@ -95,6 +95,18 @@ module in the graph asks for, and no more. That is why a build does not
 drift when an upstream dependency publishes a release, and why upgrading
 is an explicit act rather than a side effect of time passing.
 
+From v2 on, the major version is part of the module path: `/v2` ends the
+`module` line in `go.mod` and every import of it; v0 and v1 carry no
+suffix. This is Semantic Import Versioning, enforced by the toolchain, and
+it follows from the import compatibility rule: "If an old package and a new
+package have the same import path, the new package must be backwards
+compatible with the old package." A new major is therefore a different
+module. Both majors can coexist in one build, `go get -u` never crosses a
+major, and `go get` on the unsuffixed path resolves to the last version
+published without the suffix, however old. Moving to a new major means
+changing the imports. A `+incompatible` version is a v2+ tag of a module
+that never adopted the suffix.
+
 `go.sum` records the expected hash of every module in the graph. It is a
 tamper check, not a lockfile — MVS already makes the version selection
 deterministic — and it belongs in the repository.
@@ -134,3 +146,9 @@ invent a framework pattern when a standard-library pattern is enough:
 - `errors` for wrapping and matching.
 - `testing` for table tests and benchmark/fuzz conventions.
 - `database/sql` for interface boundaries and explicit error handling.
+
+**Sources:**
+
+- https://go.dev/ref/mod#major-version-suffixes
+- https://go.dev/blog/v2-go-modules
+- https://research.swtch.com/vgo-import

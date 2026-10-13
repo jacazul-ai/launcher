@@ -188,6 +188,11 @@ repository already uses that convention and the package has a clear boundary.
 Do not split code into Java-style layers just to look architectural. Prefer a
 small public API and keep unexported details inside the package that owns them.
 
+The same reference covers how modules version: Minimal Version Selection,
+`go.sum` as a tamper check, and Semantic Import Versioning, where a v2+
+module carries `/vN` in its path, so moving to a new major is an explicit
+import change that `go get -u` never makes for you.
+
 ## Error handling
 
 Errors are part of the API contract. Return errors with enough context for the

@@ -174,6 +174,17 @@ class TestGoExpertCoreSubjects(unittest.TestCase):
             ("internal/", "go.work", "go.sum", "gopls"),
         )
 
+    def test_packages_covers_semantic_import_versioning(self):
+        self._covers(
+            "packages.md",
+            (
+                "Semantic Import Versioning",
+                "import compatibility rule",
+                "+incompatible",
+                "go.dev/ref/mod#major-version-suffixes",
+            ),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
