@@ -36,6 +36,7 @@ Welcome to the Jacazul Launcher documentation. This project is built around the 
 - [Output Caching](tw-flow-cache.md) - Session-scoped context protection.
 - [Production Readiness Proposal](proposals/production-readiness.md) - Future risk-based release review across security, correctness, operations, and UX.
 - [Go Launcher Proposal](proposals/go-launcher.md) - One `jacazul` binary with a subcommand per harness, replacing the Bash launchers.
+- [Agnostic Conversation Window](proposals/agnostic-conversation-window.md) - A shared 50-turn context window with Go adapters for every harness.
 - [Go Launcher Migration State](proposals/go-launcher-migration.md) - Where each migration step stands, what closes the migration, and what waits for it.
 - [Personas Proposal](proposals/personas.md) - A persona changes the voice, never the content; on-demand and user-defined personas.
 - [EXECUTOR Mode Proposal](proposals/executor-mode.md) - A spawned agent that works a task unattended, replacing UNHINGED.
