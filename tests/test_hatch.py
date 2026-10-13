@@ -234,6 +234,15 @@ class TestHatchEngine(unittest.TestCase):
         self.assertNotIn("references/e2e", rendered_glossary)
         self.assertIn("pode implementar E2E", rendered_e2e)
         self.assertIn("## 7. Review the Trail", rendered_e2e)
+        # The approval lets the agent commit, close tasks and move the focus
+        # while it implements, and that autonomy is only safe when every
+        # commit is atomic.
+        self.assertIn("**Autonomy:**", rendered_e2e)
+        self.assertIn("without asking per commit", rendered_e2e)
+        self.assertIn('without asking "Shall I close this?"', rendered_e2e)
+        self.assertIn("**Focus:** anchor the next task", rendered_e2e)
+        self.assertIn("never includes a push", rendered_e2e)
+        self.assertIn("Atomicity is what makes that autonomy safe", rendered_e2e)
 
 if __name__ == "__main__":
     unittest.main()

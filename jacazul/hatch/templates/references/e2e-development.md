@@ -46,6 +46,21 @@ Without explicit approval nothing is implemented. Anchoring focus on a task
 is not approval. Record the approval and the contract as the DESIGN
 task's `OUTCOME`, close it, and anchor the next task.
 
+**Autonomy:** the approval is the operator's consent for the whole run of
+this initiative, so the per-step confirmations of COUNSELOR do not apply
+inside it:
+
+1. **Commits:** commit each task's work through `git-expert`
+   without asking per commit.
+2. **Task closing:** record the `OUTCOME` and run `done`
+   without asking "Shall I close this?".
+3. **Focus:** anchor the next task of the initiative, and clear the focus
+   when the last one is done.
+
+The autonomy never includes a push, a history rewrite, work outside the
+approved initiative, or filling a design gap; those still go to the
+operator.
+
 ## 4. Implement E2E, One Task at a Time
 
 For each task of the initiative:
@@ -62,7 +77,10 @@ For each task of the initiative:
 5. **Atomic commits** through `git-expert`: one logical change per commit,
    selective staging, never `git add .`; feature, docs and refactor never
    mixed; `Refs:` on intermediate commits, `Fixes:` on the commit that
-   closes the ticket.
+   closes the ticket. Atomicity is what makes that autonomy safe: each
+   commit is one change the operator can review, revert, bisect or drop
+   on its own in the trail review. A commit that mixes two changes cannot
+   be undone without undoing both.
 6. **Close the task:** record `OUTCOME`, run `done`, re-read focus and
    re-anchor the next task of the same initiative. Never let the next task
    come from the global urgency heap.
