@@ -39,6 +39,7 @@ Welcome to the Jacazul Launcher documentation. This project is built around the 
 - [Agnostic Conversation Window](proposals/agnostic-conversation-window.md) - A shared 50-turn context window with Go adapters for every harness.
 - [Broker Project Proposal](proposals/broker.md) - The GitHub broker leaves the launcher for its own project, with Postfix-style privilege separation around the vault.
 - [Go Launcher Migration State](proposals/go-launcher-migration.md) - Where each migration step stands, what closes the migration, and what waits for it.
+- [Pi Durable Research](research/pi-durable.md) - Evaluates Pi Durable, Cloudflare PiHarness, and a possible Jacazul durable runtime.
 - [Personas Proposal](proposals/personas.md) - A persona changes the voice, never the content; on-demand and user-defined personas.
 - [EXECUTOR Mode Proposal](proposals/executor-mode.md) - A spawned agent that works a task unattended, replacing UNHINGED.
 - [NO BULLSHIT Policy](agents/no-bullshit-policy.md) - Our feedback standard.
