@@ -729,15 +729,9 @@ class FlowManager:
         uuid = self.resolve_uuid(input_id)
         self.verify_not_completed(uuid)
 
-        # Validate ticket if we have a compatible broker
-        broker = BrokerFactory.get_broker(ticket)
-        if broker:
-            self.info(f"The Protocol: Validating ticket {ticket}...")
-            # We use sync_issue here because it provides a good summary
-            # and checks existence. If it fails, we still allow the link
-            # but warn the user.
-            broker.sync_issue(ticket)
-
+        # Linking never syncs: a sync of a CLOSED issue closes every pending
+        # task already linked to it, so linking several tasks to a closed
+        # issue would close the ones linked first.
         self.tw.run([uuid, "modify", f"externalid:{ticket}"])
         self.success(f"Task {uuid[:8]} linked to ticket: {ticket}")
 
