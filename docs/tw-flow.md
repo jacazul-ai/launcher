@@ -88,6 +88,11 @@ tw-flow reopen <uuid>              # Revert completed task to pending
 tw-flow discard <uuid>             # Soft-delete (moves to _archive)
 ```
 
+When `done` closes the focused task, the focus moves to the next task of
+the same plan: a pending task already on the focus stack first, otherwise
+the plan's most urgent ready task. The focus clears only when the plan has
+no ready task left, and it never jumps to another plan.
+
 ### Context & Annotations
 
 ```bash
