@@ -412,7 +412,9 @@ class FocusManager:
         No-op if `completed_uuid` isn't the current focus. Otherwise drops
         it from the stack and inspects pending entries from the same plan.
         Entries from another plan are discarded so completion can never
-        silently move the anchor into a different plan.
+        silently move the anchor into a different plan. When no stacked
+        entry of the plan is pending, the plan's most urgent ready task is
+        anchored; the focus clears only when the plan has none left.
         """
         state = self.load()
         if state.focused_task_uuid != completed_uuid:
@@ -445,6 +447,22 @@ class FocusManager:
                 state.focused_plan = plan
                 self.save(state)
                 return entry
+
+        # Nothing stacked is left: anchor the plan's next ready task, so
+        # completing the only anchored task never drops the focus mid-plan.
+        ready = (
+            tw.export([f'project:"{plan}"', "status:pending", "+READY"])
+            if plan
+            else []
+        )
+        if ready:
+            ready.sort(key=lambda t: (-t.get("urgency", 0), t.get("entry")))
+            entry = {"uuid": ready[0]["uuid"], "plan": plan}
+            state.task_track = [entry]
+            state.focused_task_uuid = entry["uuid"]
+            state.focused_plan = plan
+            self.save(state)
+            return entry
 
         state.task_track = []
         state.focused_task_uuid = None

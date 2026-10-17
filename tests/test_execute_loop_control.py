@@ -86,6 +86,99 @@ class FocusAdvanceTest(unittest.TestCase):
                 self.assertEqual(state.focused_plan, "plan-a")
 
 
+class PlanTaskWrapper:
+    """Answers uuid lookups and the ready-tasks query of one plan."""
+
+    def __init__(self, statuses, ready):
+        self.statuses = statuses
+        self.ready = ready
+        self.queries = []
+
+    def export(self, filters):
+        self.queries.append(filters)
+        if filters[0].startswith("project:"):
+            return self.ready.get(filters[0], [])
+        uuid = filters[0]
+        status = self.statuses.get(uuid)
+        return [{"uuid": uuid, "status": status}] if status else []
+
+
+class FocusAdvanceToPlanTest(unittest.TestCase):
+    """Completion anchors the next ready task of the plan, stacked or not."""
+
+    def _advance(self, path, tw):
+        with patch.dict(os.environ, {"TASKDATA": path}, clear=False):
+            manager = FocusManager()
+            manager.save(
+                FocusState(
+                    focused_plan="plan-a",
+                    focused_task_uuid="design",
+                    task_track=[{"uuid": "design", "plan": "plan-a"}],
+                    plans_of_interest=[],
+                )
+            )
+            return manager.advance("design", tw), manager.load()
+
+    def test_advance_anchors_next_ready_task_of_the_plan(self):
+        # Only DESIGN was anchored; completing it used to clear the focus
+        # instead of moving to the EXECUTE task it unblocked.
+        tw = PlanTaskWrapper(
+            {"design": "completed"},
+            {
+                'project:"plan-a"': [
+                    {"uuid": "test", "urgency": 1.0, "entry": "2"},
+                    {"uuid": "execute", "urgency": 5.0, "entry": "1"},
+                ]
+            },
+        )
+        with tempfile.TemporaryDirectory(prefix="focus-test-") as path:
+            result, state = self._advance(path, tw)
+
+        self.assertEqual(result, {"uuid": "execute", "plan": "plan-a"})
+        self.assertEqual(state.focused_task_uuid, "execute")
+        self.assertEqual(state.focused_plan, "plan-a")
+        self.assertEqual(
+            state.task_track, [{"uuid": "execute", "plan": "plan-a"}]
+        )
+        self.assertIn(
+            ['project:"plan-a"', "status:pending", "+READY"], tw.queries
+        )
+
+    def test_advance_clears_focus_when_the_plan_is_done(self):
+        tw = PlanTaskWrapper({"design": "completed"}, {})
+        with tempfile.TemporaryDirectory(prefix="focus-test-") as path:
+            result, state = self._advance(path, tw)
+
+        self.assertIsNone(result)
+        self.assertIsNone(state.focused_task_uuid)
+        self.assertIsNone(state.focused_plan)
+
+
+class FocusAdvanceOnDoneTest(JacazulTest):
+    """tw-flow done moves the focus along the plan against real data."""
+
+    def test_done_anchors_the_task_it_unblocked(self):
+        env = {"JACAZUL_TESTING": "true"}
+        self.run_cmd(
+            f"{self.tw_flow} plan chain 'DESIGN|Design it|r' "
+            "'EXECUTE|Build it|i'",
+            env=env,
+        )
+        out, _, _ = self.run_cmd(f"{self.taskp} project:chain export")
+        tasks = sorted(orjson.loads(out), key=lambda t: t["id"])
+        design, build = tasks[0]["uuid"], tasks[1]["uuid"]
+
+        self.run_cmd(f"{self.tw_flow} focus task {design}", env=env)
+        self.run_cmd(f"{self.tw_flow} outcome {design} designed", env=env)
+        out, _, _ = self.run_cmd(f"{self.tw_flow} done {design}", env=env)
+
+        self.assertIn(f"Focus advanced to: {build[:8]} [chain]", out)
+        with open(os.path.join(self.taskdata, "focus.json"), "rb") as f:
+            state = orjson.loads(f.read())
+        self.assertEqual(state["focused_task_uuid"], build)
+        self.assertEqual(state["focused_plan"], "chain")
+
+
 class ExecuteProtocolContractTest(unittest.TestCase):
     """Verify that the source protocol defines proactive EXECUTE behavior."""
 
