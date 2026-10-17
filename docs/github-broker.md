@@ -62,7 +62,7 @@ The Broker is the engine that performs the actual synchronization.
 ### Key Features:
 - **Git Context Inference:** Automatically detects Org and Project from local `.git` remotes.
 - **Hierarchical Decryption:** Resolves and decrypts the best token from the vault.
-- **Killer Sync:** Automatically closes Taskwarrior tasks if the corresponding GitHub issue is marked as `CLOSED`.
+- **Killer Sync:** Automatically closes Taskwarrior tasks if the corresponding GitHub issue is marked as `CLOSED`, keeping their titles and recording an `OUTCOME:` annotation. It runs on `jacazul-broker sync` and `tw-flow done`; `tw-flow ticket` only links and never syncs, so linking tasks to a closed issue does not close them.
 - **Error as Prompt:** The Broker provides `ACTION:` hints and returns non-zero exit codes on failure.
 
 ### Provider selection
