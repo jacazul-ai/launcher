@@ -137,6 +137,43 @@ class TestGitHubBroker(JacazulTest):
         run_calls = [c[0][0] for c in self.broker.tw.run.call_args_list]
         self.assertTrue(any("status:completed" in args for args in run_calls))
 
+    def test_sync_issue_annotates_outcome_without_touching_title(self):
+        """
+        'modify annotation:...' is not an attribute, so Taskwarrior took it
+        as the new description and the task lost its title.
+        """
+        mock_gh_res = MagicMock(returncode=0)
+        mock_gh_res.stdout = json.dumps(
+            {"state": "CLOSED", "title": "Fix bug"}
+        )
+        self.broker.tw.export.return_value = [
+            {"uuid": "deadbeef-1234", "description": "Local Task"}
+        ]
+
+        with (
+            patch.object(self.broker, "_run_gh", return_value=mock_gh_res),
+            patch("sys.stdout"),
+        ):
+            self.broker.sync_issue("#123", repo="org/proj")
+
+        run_calls = [c[0][0] for c in self.broker.tw.run.call_args_list]
+        self.assertIn(
+            [
+                "deadbeef-1234",
+                "annotate",
+                (
+                    "OUTCOME: Automatically closed by Broker sync. "
+                    "GitHub issue #123 is CLOSED."
+                ),
+            ],
+            run_calls,
+        )
+        for args in run_calls:
+            self.assertFalse(
+                any(arg.startswith("annotation:") for arg in args),
+                f"modify rewrites the description: {args}",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

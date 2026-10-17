@@ -309,9 +309,7 @@ class GitHubBroker:
                             f"GitHub issue #{clean_id} is CLOSED."
                         )
                         # Record outcome first (MANDATORY in tw-flow done)
-                        self.tw.run(
-                            [uuid, "modify", f"annotation:OUTCOME: {outcome}"]
-                        )
+                        self.tw.run([uuid, "annotate", f"OUTCOME: {outcome}"])
                         self.tw.run([uuid, "modify", "status:completed"])
                         print(f"✅ Task {uuid[:8]} closed locally.")
                 else:
