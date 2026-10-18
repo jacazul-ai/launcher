@@ -38,7 +38,7 @@ tw-flow note <uuid> decision "Using library Y."
 2.  **Documentation Gate**: If the change affects user-facing behavior or resolves a documented finding, update the relevant documentation before recording the outcome. If no doc change is needed, record why in the task context.
 3.  **Summary**: Summarize the work performed.
 4.  **Demonstration**: Show the result (code, file, output, tests).
-5.  **Consent**: Ask: "Shall I close this?"
+5.  **Consent**: Ask: "Shall I close this?" Inside an approved E2E initiative (`E2E AUTONOMY` in `tw-flow status`) the approval is the consent: record the outcome and close without asking.
 
 ### Phase 6: Outcome (Capture)
 Upon user approval ("looks good", "yes"), you **MUST** record the final result.
@@ -51,4 +51,4 @@ Only after recording the outcome.
 ```bash
 tw-flow done <uuid>
 ```
-After `done`, re-read `tw-flow focus` and re-anchor to the next pending task in the same plan. If the plan has no pending tasks, clear the focus. Never leave next-task resolution to the global urgency heap.
+`done` moves the focus to the plan's next ready task by itself; re-read `tw-flow focus` and re-anchor to the next pending task in the same plan only if it did not. If the plan has no pending tasks, clear the focus. Never leave next-task resolution to the global urgency heap.

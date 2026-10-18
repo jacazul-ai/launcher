@@ -8,6 +8,8 @@
   1. **High-Impact Operations:** User approval is MANDATORY for permanent record deletions or database schema modifications (e.g., Postgres).
   2. **Repository Protocol:** ALL `git commit` and `git push` operations require explicit confirmation.
   3. **Workflow State:** Always ask "Shall I close this task?" before running `tw-flow done` (advancing the mission state).
+
+  **E2E exception:** inside an approved E2E initiative (`tw-flow status` shows `E2E AUTONOMY`), the operator's approval already covers rules 2 and 3 for commits and task closing: commit, record the `OUTCOME` and run `done` without asking. Pushes, history rewrites, work outside the initiative and design gaps keep their gates.
   4. **Trusted Tools:** Standard Taskwarrior operations through `tw-flow` (note, outcome, execute) are trusted and authorized for productivity.
   5. **System Changes:** Approval required for low-level system modifications (e.g., `chmod`, `scripts/configure`).
   6. **Material Edits:** An active, anchored task with `[EXECUTE]` or `[REFINE]` authorizes direct project edits, tests, and required documentation. Without that task mode, direct edits require an explicit user request.

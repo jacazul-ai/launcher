@@ -240,9 +240,23 @@ class TestHatchEngine(unittest.TestCase):
         self.assertIn("**Autonomy:**", rendered_e2e)
         self.assertIn("without asking per commit", rendered_e2e)
         self.assertIn('without asking "Shall I close this?"', rendered_e2e)
-        self.assertIn("**Focus:** anchor the next task", rendered_e2e)
+        self.assertIn(
+            "**Focus:** `done` anchors the next task", rendered_e2e
+        )
         self.assertIn("never includes a push", rendered_e2e)
-        self.assertIn("Atomicity is what makes that autonomy safe", rendered_e2e)
+        self.assertIn(
+            "Atomicity is what makes that autonomy safe", rendered_e2e
+        )
+        # The autonomy also lives where the agent always looks: the approval
+        # marks the plan, status shows it, and the hub close rules and the
+        # router name it, so the always-loaded "ask first" rules never
+        # override the approved initiative.
+        self.assertIn("`tw-flow e2e <plan>`", rendered_e2e)
+        self.assertIn("**E2E exception:**", rendered_skill)
+        self.assertIn("the approval is the consent", rendered_skill)
+        self.assertIn('("pode implementar E2E")', rendered_skill)
+        self.assertIn("`E2E AUTONOMY` in `tw-flow status`", rendered_skill)
+
 
 if __name__ == "__main__":
     unittest.main()

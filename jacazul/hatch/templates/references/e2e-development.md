@@ -43,8 +43,10 @@ The operator approves the closed contract, in words like:
 > Entendi o contrato, pode implementar E2E.
 
 Without explicit approval nothing is implemented. Anchoring focus on a task
-is not approval. Record the approval and the contract as the DESIGN
-task's `OUTCOME`, close it, and anchor the next task.
+is not approval. Run `tw-flow e2e <plan>` to mark the initiative, so
+`tw-flow status` shows `E2E AUTONOMY` for the rest of the run. Record the
+approval and the contract as the DESIGN task's `OUTCOME` and close it;
+`done` anchors the next task.
 
 **Autonomy:** the approval is the operator's consent for the whole run of
 this initiative, so the per-step confirmations of COUNSELOR do not apply
@@ -54,8 +56,9 @@ inside it:
    without asking per commit.
 2. **Task closing:** record the `OUTCOME` and run `done`
    without asking "Shall I close this?".
-3. **Focus:** anchor the next task of the initiative, and clear the focus
-   when the last one is done.
+3. **Focus:** `done` anchors the next task of the initiative and clears
+   the focus when the last one is done; re-anchor by hand only if it did
+   not.
 
 The autonomy never includes a push, a history rewrite, work outside the
 approved initiative, or filling a design gap; those still go to the
