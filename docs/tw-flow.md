@@ -86,7 +86,15 @@ tw-flow done <uuid>                # Close a task (requires outcome)
 tw-flow outcome <uuid> "<msg>"     # Record result before closing
 tw-flow reopen <uuid>              # Revert completed task to pending
 tw-flow discard <uuid>             # Soft-delete (moves to _archive)
+tw-flow e2e <plan>                 # Mark an approved plan for E2E autonomy
 ```
+
+`tw-flow e2e <plan>` tags the plan's pending tasks `+e2e` once the operator
+approves an E2E initiative. While the focused task carries the tag,
+`tw-flow status` shows an `E2E AUTONOMY` banner in place of the
+confirmation restriction: the agent commits, closes and moves the focus
+without asking, and pushes still need the operator. A plan without pending
+tasks is rejected with an `ACTION:` hint.
 
 When `done` closes the focused task, the focus moves to the next task of
 the same plan: a pending task already on the focus stack first, otherwise

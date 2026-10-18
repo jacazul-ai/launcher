@@ -106,7 +106,10 @@ e2e". The agent then follows one procedure, carried by the
 3. Waits for your explicit approval. Nothing is implemented before it.
    The approval gives the agent autonomy for the rest of the initiative:
    it commits, closes each task with an `OUTCOME` and moves the focus to
-   the next task without asking you each time.
+   the next task without asking you each time. The agent marks the
+   initiative with `tw-flow e2e <plan>`, so `tw-flow status` shows
+   `E2E AUTONOMY` for the whole run, and `tw-flow done` moves the focus to
+   the next task by itself.
 4. Implements one task at a time, test first, with the gates of whatever
    is being implemented and atomic commits: one logical change per
    commit, so the trail stays easy to review, revert and edit.
