@@ -3,6 +3,8 @@
 
 Phases: ruff format (writes), ruff check --fix (writes), ruff check,
 pycodestyle. ``--check`` and the ignore guard skip the writing phases.
+``--gate`` is what ``tw-flow done`` runs: syntax and pycodestyle only,
+never writing, so closing a task never forces a modernization sweep.
 """
 
 import argparse
@@ -44,6 +46,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--check",
         action="store_true",
         help="validate only; never write to disk",
+    )
+    parser.add_argument(
+        "--gate",
+        action="store_true",
+        help="syntax and PEP 8 only, never writing (the tw-flow done gate)",
     )
     parser.add_argument(
         "--all",
@@ -109,6 +116,19 @@ def run_format_check(target: str, line_length: int) -> bool:
     return True
 
 
+def run_syntax_check(target: Path) -> bool:
+    print("🐊 Running syntax check...")
+    files = sorted(target.rglob("*.py")) if target.is_dir() else [target]
+    ok = True
+    for path in files:
+        try:
+            compile(path.read_bytes(), str(path), "exec")
+        except SyntaxError as err:
+            print(f"{path}:{err.lineno}: SyntaxError: {err.msg}")
+            ok = False
+    return ok
+
+
 def run_pycodestyle(target: str, line_length: int, show_all: bool) -> bool:
     print("🐊 Running pycodestyle final validation...")
     cmd = ["pycodestyle", f"--max-line-length={line_length}"]
@@ -154,6 +174,26 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     root = _project_root(target.resolve())
+    if args.gate:
+        line_length, length_source = resolve_line_length(
+            root, flag=args.line_length
+        )
+        print(
+            f"🐊 py-check gate: syntax and PEP 8, line length {line_length} "
+            f"({length_source}), check-only"
+        )
+        syntax_ok = run_syntax_check(target)
+        pycode_ok = run_pycodestyle(str(target), line_length, args.all)
+        if not (syntax_ok and pycode_ok):
+            print(
+                "\n❌ Python validation failed. Fix the syntax or PEP 8 "
+                "violations above.",
+                file=sys.stderr,
+            )
+            return 1
+        print("\n✅ Python gate passed: syntax and PEP 8 are clean.")
+        return 0
+
     mode, mode_source = (
         (args.mode, "flag") if args.mode else resolve_mode(root)
     )

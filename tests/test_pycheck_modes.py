@@ -144,6 +144,44 @@ class TestPyCheckCli(unittest.TestCase):
             result.returncode, 0, msg=result.stdout + result.stderr
         )
 
+    def test_gate_passes_pep8_code_that_is_not_modernized(self):
+        # The done gate must not force a modernization sweep: Optional and
+        # List are ruff findings, not PEP 8 or syntax errors.
+        source = (
+            "from typing import List, Optional\n"
+            "\n"
+            "\n"
+            "def f(x: Optional[List[int]]) -> None:\n"
+            "    return None\n"
+        )
+        legacy = _write(self.root, "legacy.py", source)
+
+        result = self._run("--gate", str(legacy))
+
+        self.assertEqual(
+            result.returncode, 0, msg=result.stdout + result.stderr
+        )
+        self.assertEqual(legacy.read_text(encoding="utf-8"), source)
+        self.assertIn("gate", result.stdout.lower())
+
+    def test_gate_blocks_a_syntax_error(self):
+        broken = _write(self.root, "broken.py", "def broken(:\n    pass\n")
+
+        result = self._run("--gate", str(broken))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Python validation failed", result.stderr)
+        self.assertIn("broken.py", result.stdout + result.stderr)
+
+    def test_gate_blocks_a_pep8_violation_without_writing(self):
+        ugly = _write(self.root, "ugly.py", "x = 1  \n")
+
+        result = self._run("--gate", str(ugly))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("W291", result.stdout)
+        self.assertEqual(ugly.read_text(encoding="utf-8"), "x = 1  \n")
+
     def test_ignore_guard_skips_writing_phases(self):
         ugly = _write(self.root, "ugly.py", "x=1\n")
         self.env["JACAZUL_PY_IGNORE_FORMATTING"] = "1"
