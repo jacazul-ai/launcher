@@ -92,6 +92,7 @@ autonomously before Phase 5 (Review) of the workflow loop.
 py-check <path>            # greenfield and migration: format, fix, validate
 py-check --check <path>    # legacy or review: validate only, writes nothing
 py-check --all <path>      # show every pycodestyle violation, not one per code
+py-check --gate <path>     # syntax and PEP 8 only: what tw-flow done runs
 ```
 
 **`py-check` writes to disk.** Without `--check` its first phase runs

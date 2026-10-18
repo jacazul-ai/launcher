@@ -52,11 +52,18 @@ change is `WARNING` / `FIX-NOW`.
 py-check <path>            # greenfield and migration: format, fix, validate
 py-check --check <path>    # legacy or review: validate only, writes nothing
 py-check --all <path>      # every pycodestyle violation, not one per code
+py-check --gate <path>     # syntax and PEP 8 only, writes nothing
 ```
 
 `py-check` refuses to run without a path, so it never reformats the whole
 repository by accident. Without `--check` it writes: `ruff format`, then
 `ruff check --fix`, then validation with `ruff check` and `pycodestyle`.
+
+`tw-flow done` runs `--gate` on every modified or untracked Python file
+before it closes a task. The gate blocks only a syntax error or a PEP 8
+violation; the modernization findings of `ruff check` (such as `Optional`
+instead of `X | None`) never block a close, so closing a task never forces a
+sweep of a file nobody asked to modernize.
 
 The banner says what it resolved:
 
