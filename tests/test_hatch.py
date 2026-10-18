@@ -204,6 +204,9 @@ class TestHatchEngine(unittest.TestCase):
         self.assertIn("## HANDOFF VISIBILITY CONTRACT", rendered_session)
         self.assertIn("focused plan and task", rendered_session)
         self.assertIn("Never say only `context loaded`", rendered_session)
+        # The bootstrap delivers the pending note in the opening prompt, so
+        # the reference tells the agent what to do when it is there.
+        self.assertIn("`📋 Session Handoff` section", rendered_session)
 
     def test_hatch_routes_e2e_development_to_its_reference(self):
         hatch_prompt("gemini", persona_override="arnalbam")

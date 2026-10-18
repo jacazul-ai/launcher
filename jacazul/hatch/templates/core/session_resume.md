@@ -2,6 +2,11 @@
 
 ### Receiving Context (On Restart)
 
+When the opening prompt carries a `📋 Session Handoff` section, the bootstrap
+has delivered this session's pending note: run `tw-flow focus`, run
+`tw-flow session ack`, and continue from the handoff's next action. The note
+keeps arriving at every launch until it is acknowledged.
+
 When `tw-flow status` shows `📋 SESSION NOTE PENDING`, a handoff note from a previous session is waiting. This is **part of the anchored session context** — not optional extra info.
 
 **Protocol (mandatory when banner is present):**
@@ -13,16 +18,15 @@ When `tw-flow status` shows `📋 SESSION NOTE PENDING`, a handoff note from a p
 
 **CRITICAL:** Do not skip reading the output of `tw-flow session resume`. It contains what no task annotation captures: where execution stopped, non-obvious state, and the next concrete action.
 
-The `injected:` marker records bootstrap delivery only. The `acknowledged:`
-marker is written only after the agent reads the handoff and runs `tw-flow
-session ack`.
+The `acknowledged:` marker is written only after the agent reads the
+handoff and runs `tw-flow session ack`; it is the only state the note keeps.
 
 **Terminal-first display rule:** Session handoff content is internal during ordinary prompts. For explicit onboard, handoff, full context, resume details, status, or debug trace requests, apply the visibility contract below and report the relevant operational context.
 
 ## HANDOFF VISIBILITY CONTRACT
 
 When a session handoff exists, whether `tw-flow session resume` prints it or
-bootstrap has already marked it with `injected:`, the agent MUST:
+the opening prompt carries it, the agent MUST:
 
 1. Read it completely before taking any other action.
 2. Treat it as mandatory operational context.
