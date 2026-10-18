@@ -155,30 +155,25 @@ The command will not silently overwrite an existing file:
 - **File exists + no `<!-- FILL IN -->`:** A previous agent already filled this in. Read it first — it has the context you are missing.
 - **`--force` flag:** Overwrite unconditionally.
 
-### Injection protocol (once-only with crash safety)
+### Delivery at launch
 
 ```
-Bootstrap detects session-note-{SESSION_ID}.md (no injected: flag)
+jacazul-claude / jacazul-pi / jacazul-gemini --jacazul-session {SESSION_ID}
         ↓
-Injects content into agent prompt
+Bootstrap finds session-note-{SESSION_ID}.md without acknowledged:
         ↓
-Appends "injected: <timestamp>" to the file immediately
-        ↓
-Agent initializes — runs tw-flow focus (onboard protocol)
-        ↓
-tw-flow keeps the note pending until explicit session ack
+Appends it verbatim to the opening prompt as "📋 Session Handoff",
+with the instruction: tw-flow focus, tw-flow session ack, continue
+from the handoff's next action
         ↓
 tw-flow session ack appends "acknowledged: <timestamp>"
 ```
 
-The `injected:` marker records delivery only; it does not prove that the
-agent read or understood the handoff. If the process crashes after injection,
-`tw-flow session resume` can replay the note until explicit acknowledgement.
-The `acknowledged:` marker is the durable confirmation state.
-
-The first `tw-flow focus` call in the onboard protocol reports the note as
-pending. The agent must read it and run `tw-flow session ack` after the
-handoff has been surfaced and understood.
+The launcher only reads the note and writes nothing to it. Until the agent
+runs `tw-flow session ack`, every launch of the session delivers the note
+again, so a crash before the ack never loses the handoff. The
+`acknowledged:` marker is the only state; a note that carries it is never
+injected. The Go launcher does not deliver the note yet.
 
 ---
 

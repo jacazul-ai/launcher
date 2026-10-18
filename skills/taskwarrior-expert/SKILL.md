@@ -82,7 +82,8 @@ tw-flow session dump          # Create handoff note for the next session
 tw-flow session dump --force  # Overwrite existing note
 ```
 
-The next session's bootstrap injects the note once and archives it. When
+Resuming the session (`--jacazul-session <id>`) delivers a pending note in
+the opening prompt until `tw-flow session ack` marks it read. When
 and how to fill the note, and what to show the user: jacazul-engine
 `references/session.md`.
 
