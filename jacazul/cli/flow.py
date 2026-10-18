@@ -586,32 +586,33 @@ class FlowManager:
                 "Python files detected. Running Quality Gate (py-check)..."
             )
 
-            pycheck_bin = os.path.join(
-                os.path.expanduser("~/.jacazul-ai"),
-                "skills/python-expert/scripts/py-check",
-            )
-            # Fallback to local path if not in home
-            if not os.path.exists(pycheck_bin):
-                pycheck_bin = os.path.join(
-                    os.path.dirname(
-                        os.path.dirname(
-                            os.path.dirname(os.path.abspath(__file__))
-                        )
-                    ),
-                    "skills/python-expert/scripts/py-check",
-                )
-
-            check_res = subprocess.run(
-                [pycheck_bin] + modified_py,
-                capture_output=False,  # Allow it to print its own beauty
-                text=True,
-                check=False,
-            )
-            if check_res.returncode != 0:
+            # The gate follows the installed package, one file per call:
+            # syntax and PEP 8 only, never writing (py-check --gate).
+            gate = [sys.executable, "-m", "jacazul.cli.pycheck", "--gate"]
+            failed = []
+            for path in modified_py:
+                try:
+                    check_res = subprocess.run(
+                        [*gate, path],
+                        capture_output=False,  # Let py-check print prompts
+                        text=True,
+                        check=False,
+                    )
+                except FileNotFoundError:
+                    self.error(
+                        "Python quality gate unavailable: "
+                        f"{sys.executable} could not run py-check.\n"
+                        "   ACTION: Reinstall the jacazul package in this "
+                        "virtualenv, then run 'done' again."
+                    )
+                if check_res.returncode != 0:
+                    failed.append(path)
+            if failed:
                 self.error(
                     "Python validation failed. Task completion BLOCKED.\n"
-                    "   ACTION: Fix the PEP 8 violations reported above "
-                    "before running 'done'."
+                    f"   Files: {', '.join(failed)}\n"
+                    "   ACTION: Fix the syntax or PEP 8 violations reported "
+                    "above before running 'done'."
                 )
 
         if not any(
