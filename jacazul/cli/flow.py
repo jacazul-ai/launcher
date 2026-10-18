@@ -23,6 +23,14 @@ except Exception:
 # 🐊 tw-flow (v1.6.0)
 # Python port of the Taskwarrior Flow manager.
 
+E2E_BANNER = (
+    "🔁 E2E AUTONOMY: approved initiative. Commit each task, close it with "
+    "an OUTCOME\n"
+    "   and let done move the focus, without asking. A push, a history "
+    "rewrite,\n"
+    "   work outside this plan or a design gap still go to the operator."
+)
+
 
 class FlowManager:
     def __init__(self):
@@ -399,7 +407,14 @@ class FlowManager:
 
         mode = os.environ.get("JACAZUL_MODE", "COUNSELOR")
         print(f"🛡️  MODE: {mode}")
-        if mode != "UNHINGED":
+        focused = (
+            self.tw.export([state.focused_task_uuid])
+            if state.focused_task_uuid
+            else []
+        )
+        if focused and "e2e" in focused[0].get("tags", []):
+            print(E2E_BANNER)
+        elif mode != "UNHINGED":
             print(
                 "⚠️  RESTRICTION: User confirmation required for Commits/Push."
             )
@@ -734,6 +749,24 @@ class FlowManager:
         # issue would close the ones linked first.
         self.tw.run([uuid, "modify", f"externalid:{ticket}"])
         self.success(f"Task {uuid[:8]} linked to ticket: {ticket}")
+
+    def cmd_e2e(self, plan_name: str):
+        tasks = self.tw.export([f'project:"{plan_name}"', "status:pending"])
+        if not tasks:
+            self.error(
+                f"Plan '{plan_name}' has no pending tasks to mark as E2E.\n"
+                "   ACTION: Run 'tw-flow plans' and pass the approved "
+                "initiative's name."
+            )
+        res = self.tw.run(
+            [f'project:"{plan_name}"', "status:pending", "modify", "+e2e"]
+        )
+        if res.returncode != 0:
+            self.error(f"Failed to mark plan {plan_name}: {res.stderr}")
+        self.success(
+            f"Plan {plan_name} marked as E2E ({len(tasks)} pending task(s))."
+        )
+        print(E2E_BANNER)
 
     def commit_footer_type(self, ticket: str, is_fix: bool = False) -> str:
         """Select Fixes only when no pending task remains for a ticket."""
@@ -1701,6 +1734,14 @@ def main():
     elif cmd == "ticket":
         flow.cmd_ticket(args[0], args[1])
         flow.invalidate_task_cache(args[0])
+    elif cmd == "e2e":
+        if not args:
+            flow.error(
+                "Missing plan name.\n   ACTION: tw-flow e2e <plan>, after "
+                "the operator approved the initiative's contract."
+            )
+        flow.cmd_e2e(args[0])
+        flow.cache.bust(ini_name=args[0])
     elif cmd == "commit":
         flow.cmd_commit(is_fix="--fix" in args)
     elif cmd == "context":
@@ -2034,6 +2075,7 @@ def main():
             '  amend <id> [description="..."] [ticket="..."]\n'
             "  note <id> <type> <msg>\n"
             "  ticket <id> <ticket>\n"
+            "  e2e <plan>\n"
             "  commit [--fix]\n"
             "  discard <id>\n"
             "  rename <old> <new>\n"
