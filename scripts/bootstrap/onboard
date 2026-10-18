@@ -25,3 +25,18 @@ $(<"$ONBOARD_TEMPLATE")
 JACAZUL_ONBOARD_EOF")
 
 $(<"$JACAZUL_PERSONA_SPEC_FILE")"
+
+# A pending handoff of this session reaches the agent in the opening prompt:
+# without it the agent only sees the note when it happens to run resume.
+# The note is appended verbatim (never expanded) and nothing is written;
+# 'tw-flow session ack' is what stops the injection.
+HANDOFF_NOTE="${TASKDATA:-${JACAZUL_HOME:-$HOME/.jacazul-ai}/.task/$PROJECT_ID}/session-note-${JACAZUL_SESSION_ID:-}.md"
+if [ -n "${JACAZUL_SESSION_ID:-}" ] && [ -f "$HANDOFF_NOTE" ] \
+    && ! grep -q "acknowledged:" "$HANDOFF_NOTE"; then
+    ONBOARD_PROMPT="$ONBOARD_PROMPT
+
+## 📋 Session Handoff
+The previous run of this session left the handoff below. Run tw-flow focus to read the anchor, run tw-flow session ack, then continue from the handoff's next action.
+
+$(<"$HANDOFF_NOTE")"
+fi

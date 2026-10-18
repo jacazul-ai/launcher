@@ -93,8 +93,38 @@ class OnboardPromptTest(unittest.TestCase):
         for name, text in prompt_text.items():
             self.assertEqual(PERSONA_VOICE.findall(text), [], name)
 
+    def test_pending_handoff_reaches_the_opening_prompt(self):
+        # Backticks and $ in a note must arrive verbatim, never expanded.
+        note = "## Next action\nRun `make test` and check $HOME.\n"
+
+        rendered = self._render("arnalbam", note=note)
+
+        self.assertIn("📋 Session Handoff", rendered)
+        self.assertIn(note.strip(), rendered)
+        self.assertIn("tw-flow focus", rendered)
+        self.assertIn("tw-flow session ack", rendered)
+        self.assertIn("next action", rendered)
+
+    def test_acknowledged_handoff_is_not_injected(self):
+        note = "## Next action\nShip it.\n\nacknowledged: 2026-10-18\n"
+
+        rendered = self._render("arnalbam", note=note)
+
+        self.assertEqual(rendered, self._render("arnalbam"))
+        self.assertNotIn("Session Handoff", rendered)
+
+    def test_handoff_of_another_session_is_not_injected(self):
+        rendered = self._render(
+            "arnalbam", note="## Next action\nShip it.\n", note_id="other"
+        )
+
+        self.assertNotIn("Session Handoff", rendered)
+        self.assertNotIn("Ship it.", rendered)
+
     @staticmethod
-    def _render(persona: str) -> str:
+    def _render(
+        persona: str, note: str | None = None, note_id: str = "abc12345"
+    ) -> str:
         with tempfile.TemporaryDirectory(prefix="onboard-prompt-") as home:
             project_id = "onboard-prompt-test"
             # Anchor the persona the way jacazul-persona does.
@@ -103,13 +133,19 @@ class OnboardPromptTest(unittest.TestCase):
             anchor.write_text(
                 json.dumps({"anchored_persona": persona}), encoding="utf-8"
             )
+            if note is not None:
+                (anchor.parent / f"session-note-{note_id}.md").write_text(
+                    note, encoding="utf-8"
+                )
             env = os.environ.copy()
+            env.pop("TASKDATA", None)
             env.update(
                 {
                     "PROJECT_ROOT": str(PROJECT_ROOT),
                     "JACAZUL_HOME": home,
                     "PROJECT_ID": project_id,
                     "JACAZUL_HARNESS": "claude",
+                    "JACAZUL_SESSION_ID": "abc12345",
                 }
             )
             return subprocess.run(
