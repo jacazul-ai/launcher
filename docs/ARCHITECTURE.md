@@ -166,21 +166,29 @@ binary to install, update, version-handshake, or discover on `PATH`: one
 **Status:** the names, paths and public boundary below are decided. The engine
 is the project `jacazul-ai/flow` (local checkout `~/source/jacazul-ai/flow`,
 worktree `master`), module `github.com/jacazul-ai/flow`. On its `master`
-(2026-10-02) the package `flow` exports `Run`, `Env`, `Streams` and
-`EnvFromOS`, but no release is tagged. Until one is, the `jacazul` side is
-designed and tested against a fake runner.
+(2026-10-20, `faef4dd`) the package `flow` exports `Run`, `Env`, `Streams` and
+`EnvFromOS`, but no release is tagged. Until one is, `jacazul` pins the engine
+by commit (a Go pseudo-version) and moves to the tag once it exists. The
+embedding is tracked in #144.
 
-Two engine-side gaps against the runtime defaults go back to the engine as
-requests:
+What the engine does with the runtime defaults:
 
-- `EnvFromOS`, used only by standalone binaries, reads `PROJECT_ID` and
-  `JACAZUL_SESSION_ID` rather than `JACAZUL_PROJECT` and `JACAZUL_SESSION`.
-  Without `JACAZUL_HOME`, it falls back to the user home directory instead
-  of `$HOME/.jacazul-ai`.
+- `EnvFromOS`, used only by standalone binaries, reads `JACAZUL_PROJECT`,
+  `JACAZUL_SESSION` and `JACAZUL_HOME`. Without `JACAZUL_HOME` it falls back
+  to `$HOME/.jacazul`, the home that #137 moves the launcher to; until then
+  the launcher's default stays `$HOME/.jacazul-ai`.
+- An empty `Env.Home` is refused (`ErrHomeRequired`).
 - An empty `Env.ProjectID` selects a `global` project. `jacazul` always sets
   it, so embedding is unaffected.
 
 An empty `Env.SessionID` selects `global`, which matches the default.
+
+Embedding does not switch any project to the engine. Which engine a project
+runs on, the Taskwarrior migration and the switch belong to the cutoff (#134).
+The engine owns the migration (`migrate taskwarrior`, see `docs/migration.md`
+in `jacazul-ai/flow`): its source is a Taskwarrior export captured with
+`taskp`, dry-run comes first, and launcher consumers do not switch until
+dry-run, apply, idempotency and rollback checks pass.
 
 ### Names
 
@@ -214,6 +222,7 @@ type Env struct {
 	DatabasePath string
 	Home         string
 	Format       string // text, json, jsonl or xml; a command's --format wins
+	Sources      RuntimeSources // where standalone values came from
 }
 
 type Streams struct {
@@ -235,9 +244,8 @@ through its arguments.
    with the runtime defaults (`--project`/`JACAZUL_PROJECT`/canonical
    resolution, `--home`/`JACAZUL_HOME`/`$HOME/.jacazul-ai`,
    `--session`/`JACAZUL_SESSION`/`global`), and always set `Home`. The
-   engine never generates a session ID per process.
-   The engine falls back to the user home directory when `JACAZUL_HOME` is
-   unset, which would put the database under `~/flow/...`.
+   engine never generates a session ID per process, and it refuses an
+   empty `Home`.
 2. **Thin adapter.** `jacazul flow <args...>` strips `flow` and passes the
    rest as `args`, the process stdio as `Streams`, and the command context as
    `ctx`.
@@ -264,20 +272,12 @@ worked around in `jacazul`.
 
 ### Impact on the Go code
 
-- The `tw-flow-to-go` bootstrap stub (`cmd/tw-flow`, `internal/cli/app.go`) is
-  replaced by the `jacazul flow` adapter over `flow.Run`. A second workflow
-  engine does not grow there.
-- The engine module requires `go 1.25`; `jacazul`'s `go` directive rises from
-  1.24 when the dependency is added. Both sides already use
-  `github.com/jessevdk/go-flags v1.6.1`.
-- Until the engine publishes its tag, the current `jaflow` binary is not
-  copied, vendored, or shelled out to as a stopgap.
-
-### Open questions
-
-- Whether the engine moves a legacy `$JACAZUL_HOME/jaflow/<PROJECT_ID>/`
-  database on first open. No real user data exists there today.
-- The first engine version `jacazul` pins.
+- The adapter lives in `internal/cli/flow.go`, where `runFlow` answers
+  `session list` natively today; the `tw-flow-to-go` branch stub is obsolete.
+  A second workflow engine does not grow in the launcher.
+- Both sides use `go 1.25` and `github.com/jessevdk/go-flags v1.6.1`.
+- The engine is never copied, vendored, or shelled out to as a `jczl-flow`
+  binary.
 
 ## 🚀 Versioning & Parity
 
