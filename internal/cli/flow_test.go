@@ -118,18 +118,6 @@ func TestFlowSessionListWithoutLanes(t *testing.T) {
 	}
 }
 
-func TestFlowOtherCommandsPointToTwFlow(t *testing.T) {
-	setup(t)
-	calls := fakeEngine(t, 0)
-	code, _, stderr := run(t, "flow", "status")
-	if code != 1 || !strings.Contains(stderr, "tw-flow status") {
-		t.Fatalf("exit %d, stderr %q", code, stderr)
-	}
-	if len(*calls) != 0 {
-		t.Errorf("engine ran for status: %+v", *calls)
-	}
-}
-
 // engineCall is what one flow.Run call received.
 type engineCall struct {
 	ctx     context.Context
@@ -155,7 +143,7 @@ func fakeEngine(t *testing.T, code int) *[]engineCall {
 }
 
 func TestFlowMigrateRunsTheEmbeddedEngine(t *testing.T) {
-	setup(t)
+	l := setup(t)
 	calls := fakeEngine(t, 3)
 	home := t.TempDir()
 
@@ -177,7 +165,15 @@ func TestFlowMigrateRunsTheEmbeddedEngine(t *testing.T) {
 	if want := []string{"migrate", "taskwarrior", "--dry-run"}; !slices.Equal(call.args, want) {
 		t.Errorf("args %q, want %q", call.args, want)
 	}
-	want := flow.Env{ProjectID: "sandbox_x", SessionID: "dddddddd", Home: home}
+	// --home names the legacy runtime home; the flow database lives under
+	// ~/.jacazul whatever it says.
+	flowHome := filepath.Join(l.home, ".jacazul")
+	want := flow.Env{
+		ProjectID:    "sandbox_x",
+		SessionID:    "dddddddd",
+		Home:         flowHome,
+		DatabasePath: filepath.Join(flowHome, "projects", "sandbox_x", "flow.sqlite3"),
+	}
 	if call.env != want {
 		t.Errorf("env %+v, want %+v", call.env, want)
 	}
@@ -192,7 +188,7 @@ func TestFlowMigrateRunsTheEmbeddedEngine(t *testing.T) {
 // The pinned engine itself answers a dry-run: it reads the export and
 // writes no database.
 func TestFlowMigrateDryRunWritesNothing(t *testing.T) {
-	setup(t)
+	l := setup(t)
 	home := t.TempDir()
 	source := filepath.Join(t.TempDir(), "export.json")
 	export := `[{"uuid":"8e1d2c4a-0000-4000-8000-000000000001","description":"Ship it",` +
@@ -209,8 +205,10 @@ func TestFlowMigrateDryRunWritesNothing(t *testing.T) {
 	if !strings.Contains(stdout, "dry-run") {
 		t.Errorf("stdout %q, want the dry-run report", stdout)
 	}
-	if _, err := os.Stat(filepath.Join(home, "flow")); !os.IsNotExist(err) {
-		t.Errorf("dry-run created %s: %v", filepath.Join(home, "flow"), err)
+	for _, dir := range []string{filepath.Join(home, "flow"), filepath.Join(l.home, ".jacazul")} {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Errorf("dry-run created %s: %v", dir, err)
+		}
 	}
 }
 
@@ -229,7 +227,7 @@ func TestFlowEngineEnvUsesTheLauncherDefaults(t *testing.T) {
 	want := flow.Env{
 		ProjectID:    id,
 		SessionID:    "global",
-		Home:         filepath.Join(l.home, ".jacazul-ai"),
+		Home:         filepath.Join(l.home, ".jacazul"),
 		DatabasePath: filepath.Join(l.home, "other.sqlite3"),
 	}
 	if got := (*calls)[0].env; got != want {

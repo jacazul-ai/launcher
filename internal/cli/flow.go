@@ -23,23 +23,23 @@ type flowRunner func(context.Context, []string, flow.Env, flow.Streams) int
 // runEngine is the embedded engine; tests replace it.
 var runEngine flowRunner = flow.Run
 
-// runFlow holds the workflow commands the launcher answers natively and
-// sends migrate to the embedded engine. Everything else stays with tw-flow
-// until opening a project decides its storage.
+// runFlow answers session list natively, from the Taskwarrior lanes, and
+// runs every other command in the embedded engine.
 func runFlow(opts Options, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 2 && args[0] == "session" && args[1] == "list" {
 		return sessionList(opts, stdout, stderr)
 	}
-	if len(args) > 0 && args[0] == "migrate" {
-		return engine(opts, args, stdout, stderr)
-	}
-	fmt.Fprintf(stderr, "❌ jacazul flow: only 'session list' and 'migrate' run here for now; run 'tw-flow %s'\n", strings.Join(args, " "))
-	return 1
+	return engine(opts, args, stdout, stderr)
 }
 
 // engine runs args in the embedded engine with the context the launcher
 // resolved, and returns the engine's exit status. The engine's output,
-// ACTION: guidance included, reaches the operator unchanged.
+// ACTION: guidance included, reaches the operator unchanged. Before any
+// command but migrate, opening the project settles its storage.
+//
+// The flow database lives under ~/.jacazul/projects; --home and
+// JACAZUL_HOME still name the legacy runtime home, whose .task silo is
+// only read.
 func engine(opts Options, args []string, stdout, stderr io.Writer) int {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -51,15 +51,27 @@ func engine(opts Options, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "❌ jacazul flow: %v\n", err)
 		return 1
 	}
+	home := filepath.Join(os.Getenv("HOME"), ".jacazul")
 	env := flow.Env{
-		ProjectID:    id.ID,
-		SessionID:    environment.Session(cmp.Or(opts.Session, opts.LegacySession), os.Getenv),
-		Home:         environment.Home(opts.Home, os.Getenv),
-		DatabasePath: os.Getenv("JACAZUL_FLOW_DATABASE_PATH"),
+		ProjectID: id.ID,
+		SessionID: environment.Session(cmp.Or(opts.Session, opts.LegacySession), os.Getenv),
+		Home:      home,
+		DatabasePath: cmp.Or(os.Getenv("JACAZUL_FLOW_DATABASE_PATH"),
+			filepath.Join(home, "projects", id.ID, "flow.sqlite3")),
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	return runEngine(ctx, args, env, flow.Streams{Stdin: os.Stdin, Stdout: stdout, Stderr: stderr})
+	streams := flow.Streams{Stdin: os.Stdin, Stdout: stdout, Stderr: stderr}
+
+	if len(args) > 0 && args[0] != "migrate" {
+		// A launcher outside a checkout finds task on PATH all the same.
+		root, _ := checkout()
+		silo := filepath.Join(environment.Home(opts.Home, os.Getenv), ".task", id.ID)
+		if code := openStorage(ctx, root, silo, env, streams); code != 0 {
+			return code
+		}
+	}
+	return runEngine(ctx, args, env, streams)
 }
 
 // sessionList prints the project's independent session lanes like
