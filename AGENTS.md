@@ -42,6 +42,14 @@ runs the whole bootstrap without starting the CLI binary.
 4. **Context Preservation:** closing a task without documentation is
    FORBIDDEN. `tw-flow done` requires an `OUTCOME:` annotation; discarded
    tasks carry an automatic audit record.
+5. **Generic by Default:** skills, scripts, docs and proposals use or
+   propose generic tooling that works the same in every harness: shell,
+   project scripts, open protocols and open MCP servers. A vendor- or
+   harness-specific tool is allowed only for an extremely specific need
+   that no generic tool covers; state that need and get operator approval
+   before using or proposing it. When a tool or measurement exists for one
+   harness only (the eval runner is Claude Code's), say which harness the
+   result covers.
 
 ## 🧠 Session Stabilization
 
@@ -121,4 +129,4 @@ reference branch and fast-forwarded, so history stays linear.
   milestones in `launcher`.
 
 ---
-**Last Updated:** 2026-10-05
+**Last Updated:** 2026-10-21
