@@ -279,6 +279,10 @@ own:
   command does. Sessions stay owned by the workflow engine; the launcher
   only creates or accepts the session ID. Other `jacazul flow` commands
   point to `tw-flow` until the pass-through lands.
+- `jacazul ui doctor` is implemented in Go, with no Bash predecessor: a
+  read-only audit of browser automation servers (see
+  [UI Expert](../ui-expert.md)). It reads `/proc` on Linux, `ps` and
+  `lsof` on macOS and PowerShell on Windows.
 
 ## Parity with the Bash launchers
 

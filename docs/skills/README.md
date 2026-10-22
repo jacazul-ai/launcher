@@ -278,6 +278,28 @@ and the one who chose full-stack JavaScript.
 
 ---
 
+### UI Expert
+**Status:** ✅ Active
+**Documentation:** [`skills/ui-expert/SKILL.md`](../../skills/ui-expert/SKILL.md) and [UI Expert Guide](../ui-expert.md)
+
+UI verified in a real browser with computed values, and browser automation
+run safely: servers launch their own isolated, headless, pinned, silent
+browser and never attach. One scheme for every harness, with a manual
+console snippet when no server is configured.
+
+**Trigger → Action**
+- When configuring a browser MCP server, use the launch flags from
+  `references/browser-safety.md`; never attach.
+- When something looks wrong or leftover servers pile up, run
+  `jacazul ui doctor`.
+- When a change claims a visual fix, assert computed values; a screenshot
+  only accompanies them.
+- When reviewing, use `CODE-REVIEW.md` scenarios with the shared scale.
+
+**Location:** `/project/skills/ui-expert/`
+
+---
+
 ### Zig Expert
 **Status:** ✅ Active
 **Documentation:** [`skills/zig-expert/SKILL.md`](../../skills/zig-expert/SKILL.md) and [Zig Expert Guide](../zig-expert.md)
