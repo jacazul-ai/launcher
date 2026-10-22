@@ -266,12 +266,12 @@ into [`skill-methodology.md`](../skill-methodology.md).
 `jacazul` resolved (Runtime defaults) and never resolves or generates its
 own:
 
-- `jacazul flow migrate ...` runs in the embedded engine (`flow.Run`) with
-  the resolved project, session and home, the process streams, and the
-  engine's exit code. The other commands move to the engine once opening a
-  project decides its storage (see "Opening a project" in
-  [`../ARCHITECTURE.md`](../ARCHITECTURE.md)); until then they point to
-  `tw-flow`.
+- `jacazul flow <command>` runs in the embedded engine (`flow.Run`) with
+  the resolved project and session, the flow home `~/.jacazul`, the
+  process streams, and the engine's exit code. Before any command but
+  `migrate`, opening the project settles its storage and migrates a
+  Taskwarrior silo without ever writing to it (see "Opening a project" in
+  [`../ARCHITECTURE.md`](../ARCHITECTURE.md)).
 - `jacazul flow session list` is implemented in Go. It reads the
   `focus-<id>.json` lanes under `TASKDATA` directly and prints what
   `tw-flow session list` prints (session, plan, task, age, status, `*` on

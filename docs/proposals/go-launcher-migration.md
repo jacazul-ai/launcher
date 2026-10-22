@@ -33,7 +33,7 @@ there.
 | `docs/cli.md` and the Bash deprecation path | pending | `c9a8af02` |
 | Environment, process and security validation | pending | `3dcc38d7` |
 | `jacazul flow`: native `session list`, HANDOFF column | done (`fe5417a`, `98061b1`) | `c0e949ff` |
-| `jacazul flow`: pass-through to `tw-flow` | superseded by the embedded engine (#144): `migrate` runs in `flow.Run`, the rest waits for the storage check | `48a5e288` |
+| `jacazul flow`: pass-through to `tw-flow` | superseded by the embedded engine (#144): every command but `session list` runs in `flow.Run` after the storage check (`c9aa154`); the check before a launch is pending | `48a5e288` |
 | Skills without `project_id` baked in | done (`7edb0ca`), task open | `37345109` |
 | Orientation: the engine hub is the single source | done (`baf37e7`), task open | `8e5d2af9` |
 

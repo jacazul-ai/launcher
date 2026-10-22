@@ -185,18 +185,31 @@ An empty `Env.SessionID` selects `global`, which matches the default.
 
 There is no opt-in switch: opening a project decides its storage (see
 "Opening a project" below). The engine owns the migration (`migrate
-taskwarrior`, see `docs/migration.md` in `jacazul-ai/flow`) and captures the
-Taskwarrior export itself by running `task ... export`; `jacazul` does not
-depend on `taskp` for it. The engine tells three failures apart, each fatal
-with `ACTION:` guidance: the `task` binary is missing, the `task` run failed,
-or the export is not valid JSON.
+taskwarrior`, see `docs/migration.md` in `jacazul-ai/flow`); `jacazul` does
+not depend on `taskp` for it.
+
+**The Taskwarrior silo is never written.** A plain `task export` is not
+read-only: measured on Taskwarrior 3.4.2, it rewrote `taskchampion.sqlite3`.
+So `jacazul` copies the silo to a temporary directory and exports the copy
+with `rc.gc=off rc.recurrence=off rc.hooks=off` and the Jacazul taskrc (the
+embedded template, whose UDAs keep numeric fields numeric whatever the
+operator's own taskrc declares). The copy is removed afterwards. The engine
+can run the export itself, but it looks `task` up on `PATH`, where a Jacazul
+session puts the `scripts/task` guard first; until it accepts an explicit
+binary, `jacazul` finds the real `task` (`JACAZUL_REAL_TASK`, then `PATH`
+without `scripts/`, then the usual install paths), runs the export and
+hands it over with `--source`, the engine's offline path. Three failures
+stop with `ACTION:`: no `task` binary (the prompt below), the export
+failed, or the export is not valid JSON.
 
 ### Opening a project
 
 `jacazul` knows both locations: the Taskwarrior silo
-(`$JACAZUL_HOME/.task/<PROJECT_ID>`) and the flow database (see "Runtime
-paths and environment"). Before any launch and before any `jacazul flow`
-action, in the operator's terminal, it checks them:
+(`$JACAZUL_HOME/.task/<PROJECT_ID>`, holding `taskchampion.sqlite3` or
+`pending.data`) and the flow database (see "Runtime paths and
+environment"). Before any `jacazul flow` command but `migrate` it checks
+them; the same check before a launch waits until `tw-flow` and `taskp`
+stop writing to migrated silos.
 
 | Flow database | Taskwarrior silo | `task` binary | What `jacazul` does |
 |---|---|---|---|
@@ -216,12 +229,12 @@ The rarer paths:
 - A failed migration stops with `ACTION:` and creates no flow database, so
   the next run can try again.
 - Choosing to install prints the system's install command and exits; the
-  next run finds `task` and migrates.
+  next run finds `task` and migrates. Any answer but proceed counts as
+  install.
 - A call without a terminal (an agent through its harness) that reaches the
   prompt stops with `ACTION:` instead of waiting for an answer.
-- Inside a Jacazul session the `task` on `PATH` can be the `scripts/task`
-  guard, so `jacazul` passes the engine the real binary it resolves
-  (`JACAZUL_REAL_TASK`) and the silo path explicitly.
+- The migration report goes to stderr, so the output of the command that
+  triggered it stays clean.
 
 ### Names
 
@@ -234,7 +247,12 @@ The rarer paths:
 
 ### Runtime paths and environment
 
-- Database: `$JACAZUL_HOME/flow/<PROJECT_ID>/flow.sqlite3`.
+- Database: `~/.jacazul/projects/<PROJECT_ID>/flow.sqlite3`. What belongs
+  to a project lives under its directory in the new home; `jacazul` always
+  sets `Env.Home` to `~/.jacazul` and `Env.DatabasePath`, so the engine's
+  own defaults never apply. `--home` and `JACAZUL_HOME` still name the
+  legacy runtime home (`~/.jacazul-ai`), read for the silo, until #137
+  moves the rest.
 - Override: `JACAZUL_FLOW_DATABASE_PATH` (replaces `JAFLOW_DATABASE_PATH`).
 - Context variables: `JACAZUL_PROJECT`, `JACAZUL_HOME` and `JACAZUL_SESSION`,
   resolved by `jacazul` with the precedence flag > environment > configuration
@@ -306,11 +324,10 @@ worked around in `jacazul`.
 ### Impact on the Go code
 
 - The adapter lives in `internal/cli/flow.go`: `runFlow` answers `session
-  list` natively and sends `migrate` to the engine through the `runEngine`
-  seam (`flow.Run` in production); the other commands still point to
-  `tw-flow` until opening a project decides its storage. The
-  `tw-flow-to-go` branch stub is obsolete. A second workflow engine does not
-  grow in the launcher.
+  list` natively and sends every other command to the engine through the
+  `runEngine` seam (`flow.Run` in production). The storage check is
+  `internal/cli/storage.go`. The `tw-flow-to-go` branch stub is obsolete. A
+  second workflow engine does not grow in the launcher.
 - Both sides use `go 1.25` and `github.com/jessevdk/go-flags v1.6.1`.
 - The engine is never copied, vendored, or shelled out to as a `jczl-flow`
   binary.
