@@ -2,13 +2,15 @@ module github.com/jacazul-ai/launcher
 
 go 1.25.0
 
-require github.com/jessevdk/go-flags v1.6.1
+require (
+	github.com/jacazul-ai/flow v0.0.0-20261020221413-faef4dd5165a
+	github.com/jessevdk/go-flags v1.6.1
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/flosch/pongo2/v6 v6.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/jacazul-ai/flow v0.0.0-20261020221413-faef4dd5165a // indirect
 	github.com/mattn/go-isatty v0.0.23 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect

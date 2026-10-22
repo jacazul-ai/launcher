@@ -1,10 +1,15 @@
 package cli
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/jacazul-ai/flow"
 )
 
 func TestFlowSessionListReadsTheProjectLanes(t *testing.T) {
@@ -115,8 +120,119 @@ func TestFlowSessionListWithoutLanes(t *testing.T) {
 
 func TestFlowOtherCommandsPointToTwFlow(t *testing.T) {
 	setup(t)
+	calls := fakeEngine(t, 0)
 	code, _, stderr := run(t, "flow", "status")
 	if code != 1 || !strings.Contains(stderr, "tw-flow status") {
 		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	if len(*calls) != 0 {
+		t.Errorf("engine ran for status: %+v", *calls)
+	}
+}
+
+// engineCall is what one flow.Run call received.
+type engineCall struct {
+	ctx     context.Context
+	args    []string
+	env     flow.Env
+	streams flow.Streams
+}
+
+// fakeEngine replaces flow.Run for the test. The fake writes one line to
+// each output stream and returns code.
+func fakeEngine(t *testing.T, code int) *[]engineCall {
+	t.Helper()
+	var calls []engineCall
+	saved := runEngine
+	runEngine = func(ctx context.Context, args []string, env flow.Env, streams flow.Streams) int {
+		calls = append(calls, engineCall{ctx, args, env, streams})
+		fmt.Fprintln(streams.Stdout, "engine out")
+		fmt.Fprintln(streams.Stderr, "ERROR: schema 9 is newer than 4\nACTION: upgrade jacazul")
+		return code
+	}
+	t.Cleanup(func() { runEngine = saved })
+	return &calls
+}
+
+func TestFlowMigrateRunsTheEmbeddedEngine(t *testing.T) {
+	setup(t)
+	calls := fakeEngine(t, 3)
+	home := t.TempDir()
+
+	code, stdout, stderr := run(t, "--home", home, "--project", "sandbox_x", "--session", "dddddddd",
+		"flow", "migrate", "taskwarrior", "--dry-run")
+	if code != 3 {
+		t.Errorf("exit %d, want the engine's 3", code)
+	}
+	if stdout != "engine out\n" {
+		t.Errorf("stdout %q, want the engine's output unchanged", stdout)
+	}
+	if stderr != "ERROR: schema 9 is newer than 4\nACTION: upgrade jacazul\n" {
+		t.Errorf("stderr %q, want the engine's guidance unchanged", stderr)
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("engine ran %d times, want once with no retry", len(*calls))
+	}
+	call := (*calls)[0]
+	if want := []string{"migrate", "taskwarrior", "--dry-run"}; !slices.Equal(call.args, want) {
+		t.Errorf("args %q, want %q", call.args, want)
+	}
+	want := flow.Env{ProjectID: "sandbox_x", SessionID: "dddddddd", Home: home}
+	if call.env != want {
+		t.Errorf("env %+v, want %+v", call.env, want)
+	}
+	if call.ctx == nil {
+		t.Error("no context passed")
+	}
+	if call.streams.Stdin != os.Stdin {
+		t.Error("stdin is not the process stdin")
+	}
+}
+
+// The pinned engine itself answers a dry-run: it reads the export and
+// writes no database.
+func TestFlowMigrateDryRunWritesNothing(t *testing.T) {
+	setup(t)
+	home := t.TempDir()
+	source := filepath.Join(t.TempDir(), "export.json")
+	export := `[{"uuid":"8e1d2c4a-0000-4000-8000-000000000001","description":"Ship it",` +
+		`"status":"pending","entry":"20261021T120000Z","project":"demo"}]`
+	if err := os.WriteFile(source, []byte(export), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := run(t, "--home", home, "--project", "sandbox_x",
+		"flow", "migrate", "taskwarrior", "--source", source)
+	if code != 0 {
+		t.Fatalf("exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "dry-run") {
+		t.Errorf("stdout %q, want the dry-run report", stdout)
+	}
+	if _, err := os.Stat(filepath.Join(home, "flow")); !os.IsNotExist(err) {
+		t.Errorf("dry-run created %s: %v", filepath.Join(home, "flow"), err)
+	}
+}
+
+// Without flags the engine gets what the launcher resolves: the canonical
+// project, the global session and the default home, never an empty value
+// the engine would fill in on its own.
+func TestFlowEngineEnvUsesTheLauncherDefaults(t *testing.T) {
+	l := setup(t)
+	calls := fakeEngine(t, 0)
+	t.Setenv("JACAZUL_FLOW_DATABASE_PATH", filepath.Join(l.home, "other.sqlite3"))
+
+	if code, _, stderr := run(t, "flow", "migrate", "taskwarrior"); code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	id := filepath.Base(filepath.Dir(l.project)) + "_" + filepath.Base(l.project)
+	want := flow.Env{
+		ProjectID:    id,
+		SessionID:    "global",
+		Home:         filepath.Join(l.home, ".jacazul-ai"),
+		DatabasePath: filepath.Join(l.home, "other.sqlite3"),
+	}
+	if got := (*calls)[0].env; got != want {
+		t.Errorf("env %+v, want %+v", got, want)
 	}
 }
