@@ -235,6 +235,13 @@ The rarer paths:
   prompt stops with `ACTION:` instead of waiting for an answer.
 - The migration report goes to stderr, so the output of the command that
   triggered it stays clean.
+- `info`, `help` and `--version` open no storage and trigger nothing.
+- `jacazul flow migrate taskwarrior` without `--source` exports the same
+  copy; the operator's `--dry-run` or `--apply` pass through.
+- `jacazul --dry flow <command>` (or `DRY=true`) prints the database, the
+  silo, the `task` binary and the decision, runs the migration as a
+  dry-run, and runs no command: nothing is written, whatever the command
+  asks. The procedure is [`flow-smoke-check.md`](flow-smoke-check.md).
 
 ### Names
 

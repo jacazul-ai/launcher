@@ -35,6 +35,7 @@ Welcome to the Jacazul Launcher documentation. This project is built around the 
 ### 🔒 Advanced Concepts
 - [Environment Modes](environment-modes.md) - COUNSELOR (Safety) vs UNHINGED (Autonomy).
 - [Output Caching](tw-flow-cache.md) - Session-scoped context protection.
+- [Flow Smoke Check](flow-smoke-check.md) - Dry-run the storage check, see where the flow database lands, prove the Taskwarrior silo is never written.
 - [Production Readiness Proposal](proposals/production-readiness.md) - Future risk-based release review across security, correctness, operations, and UX.
 - [Go Launcher Proposal](proposals/go-launcher.md) - One `jacazul` binary with a subcommand per harness, replacing the Bash launchers.
 - [Agnostic Conversation Window](proposals/agnostic-conversation-window.md) - A shared 50-turn context window with Go adapters for every harness.
@@ -75,6 +76,7 @@ in `AGENTS.md`):
 | `docs/environment-modes.md` | Users | COUNSELOR vs UNHINGED. When and why to switch. |
 | `docs/github-broker.md` | Users | Ticket sync triggers and credential-less flow. |
 | `docs/tw-flow-cache.md` | Users | Cache behavior, signals, and bypass triggers. |
+| `docs/flow-smoke-check.md` | Users / Contributors | Dry run and sandbox apply of the `jacazul flow` storage check; what each line and failure means. |
 | `docs/skill-methodology.md` | Contributors / AI Agents | Subject-agnostic rules for creating and maintaining any skill: descriptions, bodies, reference-vs-skill, cross-references, evaluation. |
 | `docs/skill-evals.md` | Contributors / AI Agents | Running a skill's eval suite, writing graders that measure what the agent did, reading traces, comparing before and after a change. |
 | `docs/ARCHITECTURE.md` | Contributors | Internal design decisions. Not trigger-based — explains *why*, not *how to use*. |
