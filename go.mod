@@ -3,7 +3,7 @@ module github.com/jacazul-ai/launcher
 go 1.25.0
 
 require (
-	github.com/jacazul-ai/flow v0.0.0-20261020221413-faef4dd5165a
+	github.com/jacazul-ai/flow v0.0.0-20261022150532-0aeb67be2275
 	github.com/jessevdk/go-flags v1.6.1
 )
 
