@@ -1,0 +1,39 @@
+schema_version: "1.0"
+name: 04-jsdom-pseudo-element
+description: >-
+  A jsdom test asserting pseudo-element content is not evidence; the agent
+  splits the claim between the DOM runner and a real browser.
+execution:
+  max_turns: 12
+  timeout_seconds: 300
+  allowed_tools: [Skill, Read, Glob, Grep]
+  prompt: |
+    Our Vitest suite runs with the jsdom environment. This test guards the
+    breadcrumb divider and it is green:
+
+    ```js
+    test('second crumb shows a divider', () => {
+      document.body.innerHTML = `
+        <style>.crumb + .crumb::before { content: "/"; }</style>
+        <ol><li class="crumb">Home</li><li class="crumb">Docs</li></ol>`;
+      const second = document.querySelectorAll('.crumb')[1];
+      const content = getComputedStyle(second, '::before').content;
+      expect(content === '"/"' || content === 'none' || content === '').toBe(true);
+    });
+    ```
+
+    Can we rely on it to ship the breadcrumb?
+graders:
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: ui-expert
+  - name: dom-runner-limits
+    type: llm
+    criteria: |
+      - The reply says the test proves nothing about the divider, because
+        jsdom does not render pseudo-elements and the assertion also accepts
+        'none' or an empty value.
+      - The reply keeps a DOM-level check in jsdom, such as
+        `second.matches('.crumb + .crumb')`.
+      - The reply moves the pseudo-element content check to a real browser.

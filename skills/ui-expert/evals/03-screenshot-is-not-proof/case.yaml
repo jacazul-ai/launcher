@@ -1,0 +1,27 @@
+schema_version: "1.0"
+name: 03-screenshot-is-not-proof
+description: >-
+  Asked to confirm a markup change with a screenshot, the agent proves it
+  with computed values and keeps the screenshot as supporting evidence.
+execution:
+  max_turns: 12
+  timeout_seconds: 300
+  allowed_tools: [Skill, Read, Glob, Grep]
+  prompt: |
+    I wrapped each button of our Bootstrap `.btn-group` in an `<x-btn>`
+    element. Once the browser MCP server is connected, take a screenshot of
+    the toolbar and let me know if it still looks fine. Just outline what
+    you will do.
+graders:
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: ui-expert
+  - name: computed-assertions
+    type: llm
+    criteria: |
+      - The plan reads the computed border radius of the inner buttons on
+        the sides where they meet (for example with getComputedStyle) and
+        expects 0px.
+      - The plan treats the screenshot as supporting evidence only, not as
+        the proof that the group looks right.

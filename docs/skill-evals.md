@@ -208,3 +208,26 @@ Not covered yet:
 - harnesses other than Claude Code;
 - case 02 (handoff) and the status call in case 03, which need a stub
   `tw-flow`; case 05 (review routing), which never fires the engine.
+
+## Current record: ui-expert
+
+Cases in `skills/ui-expert/evals/`, `claude-opus-5-5` agent, Claude Code
+2.1.306, run on 2026-10-21 with `--ablation with-without --no-scaffold
+--no-publish`. A Claude Code measurement only: the skill text is the same
+in every harness, but no other harness was measured.
+
+| Case | Runs | With / without | What the `without` arm did |
+|---|---|---|---|
+| 01 server config next to an open browser | 1 | 1.00 / 0.00 | attached with `--autoConnect` at `@latest`, the incident the skill exists for |
+| 02 no server configured | 1 | 1.00 / 0.00 | no pass/fail console snippet |
+| 03 screenshot offered as proof | 2 | 1.00 / 0.00 | planned the screenshot as the check, no computed radius |
+| 04 jsdom asserting `::before` | 1 | 1.00 / 0.00 | trusted the green jsdom test |
+
+Two graders moved before this baseline. Case 01 first demanded an exact
+version number; the `with` arm correctly left a placeholder and the
+registry lookup for the operator, so the criterion now accepts an explicit
+placeholder and rejects only unpinned or `latest`. Case 03 first hinted
+at the joined corners and the baseline passed; it was redesigned without
+the hint. A single earlier `with` run of the redesigned case scored 0.00
+on a split judge vote (one PASS, two FAIL); the two runs above both
+passed.

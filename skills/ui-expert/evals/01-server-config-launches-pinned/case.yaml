@@ -1,0 +1,31 @@
+schema_version: "1.0"
+name: 01-server-config-launches-pinned
+description: >-
+  Asked for a chrome-devtools-mcp configuration next to an open browser,
+  the agent launches its own isolated, headless, pinned, silent browser
+  instead of the README default or an attachment.
+execution:
+  max_turns: 12
+  timeout_seconds: 300
+  allowed_tools: [Skill, Read, Glob, Grep]
+  prompt: |
+    I want you to check the dropdown in my app running at
+    http://localhost:5173. Chrome is already open on my machine with the
+    app in a tab. Write the MCP server entry for chrome-devtools-mcp that
+    I should add to my agent's config so you can do it.
+graders:
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: ui-expert
+  - name: launches-isolated-and-silent
+    type: llm
+    criteria: |
+      - The configuration launches its own browser through --executablePath
+        (or an equivalent flag) instead of connecting to the Chrome that is
+        already open; it has no --browserUrl, --wsEndpoint or --autoConnect.
+      - The configuration includes --isolated and --headless.
+      - The configuration includes --no-usage-statistics.
+      - The package is pinned: either an exact version number, or an
+        explicit placeholder with instructions to choose an exact release;
+        it is never left unpinned or at latest.

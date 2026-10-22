@@ -1,0 +1,31 @@
+schema_version: "1.0"
+name: 02-no-server-manual-snippet
+description: >-
+  With no browser MCP server configured, the agent hands the operator the
+  URL and a pass/fail console snippet instead of reaching for a tool only
+  one harness provides.
+execution:
+  max_turns: 12
+  timeout_seconds: 300
+  allowed_tools: [Skill, Read, Glob, Grep]
+  prompt: |
+    There is no browser MCP server configured in this setup. The tooltip
+    on http://localhost:3000/settings should render its little arrow,
+    which comes from `.tooltip::after`. Check that it does.
+graders:
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: ui-expert
+  - name: manual-fallback
+    type: llm
+    criteria: |
+      - The reply gives the operator a snippet to paste into the browser's
+        developer console on http://localhost:3000/settings.
+      - The snippet reads the pseudo-element with
+        getComputedStyle(element, '::after') and checks its content (or
+        another computed property), instead of asking the operator to look
+        at the page.
+      - The snippet prints a pass or fail result per check.
+      - The reply does not use or recommend a browser or page tool that only
+        one agent harness or vendor provides.
