@@ -183,12 +183,45 @@ What the engine does with the runtime defaults:
 
 An empty `Env.SessionID` selects `global`, which matches the default.
 
-Embedding does not switch any project to the engine. Which engine a project
-runs on, the Taskwarrior migration and the switch belong to the cutoff (#134).
-The engine owns the migration (`migrate taskwarrior`, see `docs/migration.md`
-in `jacazul-ai/flow`): its source is a Taskwarrior export captured with
-`taskp`, dry-run comes first, and launcher consumers do not switch until
-dry-run, apply, idempotency and rollback checks pass.
+There is no opt-in switch: opening a project decides its storage (see
+"Opening a project" below). The engine owns the migration (`migrate
+taskwarrior`, see `docs/migration.md` in `jacazul-ai/flow`) and captures the
+Taskwarrior export itself by running `task ... export`; `jacazul` does not
+depend on `taskp` for it. The engine tells three failures apart, each fatal
+with `ACTION:` guidance: the `task` binary is missing, the `task` run failed,
+or the export is not valid JSON.
+
+### Opening a project
+
+`jacazul` knows both locations: the Taskwarrior silo
+(`$JACAZUL_HOME/.task/<PROJECT_ID>`) and the flow database (see "Runtime
+paths and environment"). Before any launch and before any `jacazul flow`
+action, in the operator's terminal, it checks them:
+
+| Flow database | Taskwarrior silo | `task` binary | What `jacazul` does |
+|---|---|---|---|
+| exists | any | any | Uses the flow database. |
+| missing | exists | found | Runs the engine's migration, then uses the engine. |
+| missing | exists | missing | Asks: install Taskwarrior, or proceed without the migration. |
+| missing | missing | any | Creates a new flow database. |
+
+Proceeding without the migration creates a new, empty flow database and
+leaves the Taskwarrior silo untouched; both stay. The prompt states the
+consequence before the choice: the engine refuses to migrate onto an
+existing database, so a later migration needs a rollback or a clean target,
+and that is the operator's call.
+
+The rarer paths:
+
+- A failed migration stops with `ACTION:` and creates no flow database, so
+  the next run can try again.
+- Choosing to install prints the system's install command and exits; the
+  next run finds `task` and migrates.
+- A call without a terminal (an agent through its harness) that reaches the
+  prompt stops with `ACTION:` instead of waiting for an answer.
+- Inside a Jacazul session the `task` on `PATH` can be the `scripts/task`
+  guard, so `jacazul` passes the engine the real binary it resolves
+  (`JACAZUL_REAL_TASK`) and the silo path explicitly.
 
 ### Names
 
