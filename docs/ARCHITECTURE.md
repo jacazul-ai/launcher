@@ -305,9 +305,12 @@ worked around in `jacazul`.
 
 ### Impact on the Go code
 
-- The adapter lives in `internal/cli/flow.go`, where `runFlow` answers
-  `session list` natively today; the `tw-flow-to-go` branch stub is obsolete.
-  A second workflow engine does not grow in the launcher.
+- The adapter lives in `internal/cli/flow.go`: `runFlow` answers `session
+  list` natively and sends `migrate` to the engine through the `runEngine`
+  seam (`flow.Run` in production); the other commands still point to
+  `tw-flow` until opening a project decides its storage. The
+  `tw-flow-to-go` branch stub is obsolete. A second workflow engine does not
+  grow in the launcher.
 - Both sides use `go 1.25` and `github.com/jessevdk/go-flags v1.6.1`.
 - The engine is never copied, vendored, or shelled out to as a `jczl-flow`
   binary.

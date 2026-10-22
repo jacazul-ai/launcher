@@ -266,9 +266,12 @@ into [`skill-methodology.md`](../skill-methodology.md).
 `jacazul` resolved (Runtime defaults) and never resolves or generates its
 own:
 
-- Until the engine is embedded, `jacazul flow <args...>` passes through to
-  the current `tw-flow` with the same arguments, streams and exit code,
-  marked for replacement by `flow.Run`.
+- `jacazul flow migrate ...` runs in the embedded engine (`flow.Run`) with
+  the resolved project, session and home, the process streams, and the
+  engine's exit code. The other commands move to the engine once opening a
+  project decides its storage (see "Opening a project" in
+  [`../ARCHITECTURE.md`](../ARCHITECTURE.md)); until then they point to
+  `tw-flow`.
 - `jacazul flow session list` is implemented in Go. It reads the
   `focus-<id>.json` lanes under `TASKDATA` directly and prints what
   `tw-flow session list` prints (session, plan, task, age, status, `*` on
@@ -277,8 +280,8 @@ own:
   header shares the lanes' layout, so its columns line up. It only
   reads, so it does not refresh the lane's age the way every `tw-flow`
   command does. Sessions stay owned by the workflow engine; the launcher
-  only creates or accepts the session ID. Other `jacazul flow` commands
-  point to `tw-flow` until the pass-through lands.
+  only creates or accepts the session ID. After the switch the
+  engine's own session list replaces it.
 - `jacazul ui doctor` is implemented in Go, with no Bash predecessor: a
   read-only audit of browser automation servers (see
   [UI Expert](../ui-expert.md)). It reads `/proc` on Linux, `ps` and
