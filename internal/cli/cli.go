@@ -35,7 +35,7 @@ func Run(args []string, stdout, stderr io.Writer, version string) int {
 	var opts Options
 	parser := flags.NewParser(&opts, flags.HelpFlag|flags.PassAfterNonOption)
 	parser.Name = "jacazul"
-	parser.Usage = "[Options] <harness> [args...]\n\nHarnesses:\n  claude    Claude Code\n\nCommands:\n  flow session list    List this project's Jacazul sessions"
+	parser.Usage = "[Options] <harness> [args...]\n\nHarnesses:\n  claude    Claude Code\n\nCommands:\n  flow session list    List this project's Jacazul sessions\n  ui doctor            Audit browser automation servers (read-only)"
 
 	rest, err := parser.ParseArgs(args)
 	if opts.Version {
@@ -58,6 +58,9 @@ func Run(args []string, stdout, stderr io.Writer, version string) int {
 	}
 	if len(rest) > 0 && rest[0] == "flow" {
 		return runFlow(opts, rest[1:], stdout, stderr)
+	}
+	if len(rest) > 0 && rest[0] == "ui" {
+		return runUI(rest[1:], stdout, stderr)
 	}
 	if len(rest) == 0 {
 		fmt.Fprintln(stderr, "no harness given")

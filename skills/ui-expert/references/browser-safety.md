@@ -62,7 +62,16 @@ day, and never at a binary whose profile directory is the operator's.
 
 ## Auditing what is running
 
-The audit by hand:
+`jacazul ui doctor` reports running servers with their parent and age,
+orphans, attach mode, unpinned versions, missing launch flags, telemetry
+watchdogs, remote-debugging ports and whether a dedicated Chromium is
+installed, on Linux, macOS and Windows. It never writes and never kills;
+it prints the commands to run after you confirm. Exit status: 0 clean,
+1 something needs the operator, 2 the doctor could not look. It cannot
+see another process's environment, so `CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS`
+stays a configuration check.
+
+Without the launcher, the same audit by hand:
 
 | System | Server processes | Remote-debugging listeners |
 | --- | --- | --- |
