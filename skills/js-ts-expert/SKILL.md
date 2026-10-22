@@ -173,7 +173,10 @@ Activate `security-expert` for CI, packaging, and supply-chain work.
 - Follow the project's runner (Vitest, Jest, Mocha, `node:test`,
   Playwright); do not mix.
 - Test browser code in a real DOM environment or a browser, not in a mock
-  that hides layout and events.
+  that hides layout and events. What a DOM runner cannot compute (layout,
+  pseudo-elements, the accessibility tree) and how to drive a browser
+  safely belong to `ui-expert`; without it, a jsdom assertion on layout
+  or `::before` proves nothing.
 - Test-first for bug fixes: a failing reproduction before the change.
 - Prefer testable design over mocks: explicit dependencies, small seams,
   pure functions for logic. Mock at the network boundary.
