@@ -63,11 +63,24 @@ func engine(opts Options, args []string, stdout, stderr io.Writer) int {
 	defer stop()
 	streams := flow.Streams{Stdin: os.Stdin, Stdout: stdout, Stderr: stderr}
 
-	if len(args) > 0 && args[0] != "migrate" {
-		// A launcher outside a checkout finds task on PATH all the same.
-		root, _ := checkout()
-		silo := filepath.Join(environment.Home(opts.Home, os.Getenv), ".task", id.ID)
-		if code := openStorage(ctx, root, silo, env, streams); code != 0 {
+	// A launcher outside a checkout finds task on PATH all the same.
+	root, _ := checkout()
+	silo := filepath.Join(environment.Home(opts.Home, os.Getenv), ".task", id.ID)
+	// A dry run only shows what opening would do, whatever the command.
+	if opts.Dry || os.Getenv("DRY") != "" {
+		return openStorage(ctx, root, silo, env, streams, true)
+	}
+	if explicitMigration(args) && hasTaskwarrior(silo) {
+		task := findTask(root)
+		if task == "" {
+			fmt.Fprintln(stderr, "❌ jacazul flow: no task binary was found to export the Taskwarrior data")
+			fmt.Fprintln(stderr, "ACTION: Install Taskwarrior, or pass an export with --source.")
+			return 1
+		}
+		return migrate(ctx, task, silo, env, streams, args)
+	}
+	if opensStorage(args) && args[0] != "migrate" {
+		if code := openStorage(ctx, root, silo, env, streams, false); code != 0 {
 			return code
 		}
 	}

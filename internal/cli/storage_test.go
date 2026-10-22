@@ -49,7 +49,10 @@ func openProject(t *testing.T, migrateCode int) opening {
 				t.Fatalf("export unreadable during the migration: %v", err)
 			}
 			*o.exports = append(*o.exports, string(data))
-			// The engine creates the database before it can fail.
+			if !slices.Contains(args, "--apply") {
+				return migrateCode
+			}
+			// An apply creates the database before it can fail.
 			if err := os.MkdirAll(filepath.Dir(o.database), 0o755); err != nil {
 				t.Fatal(err)
 			}
@@ -305,6 +308,124 @@ func TestOpeningStopsWhenTheExportFails(t *testing.T) {
 				t.Errorf("engine ran: %q", *o.calls)
 			}
 			o.siloUntouched(t)
+		})
+	}
+}
+
+// --dry shows where the storage is and what opening would do, runs the
+// migration as a dry-run, and runs no command: nothing is written.
+func TestOpeningDryRunWritesNothing(t *testing.T) {
+	for name, flag := range map[string][]string{"flag": {"--dry"}, "environment": nil} {
+		t.Run(name, func(t *testing.T) {
+			o := openProject(t, 0)
+			o.withSilo(t)
+			record := fakeTask(t, `echo '[]'`)
+			if flag == nil {
+				t.Setenv("DRY", "true")
+			}
+
+			code, stdout, stderr := run(t, append(flag, "flow", "status")...)
+			if code != 0 {
+				t.Fatalf("exit %d, stderr %q", code, stderr)
+			}
+			for _, want := range []string{o.database, o.silo, "migrate", filepath.Dir(record)} {
+				if !strings.Contains(stdout, want) {
+					t.Errorf("dry output lacks %q:\n%s", want, stdout)
+				}
+			}
+			calls := *o.calls
+			if len(calls) != 1 || !slices.Contains(calls[0], "--dry-run") || slices.Contains(calls[0], "--apply") {
+				t.Fatalf("engine calls %q, want one migration dry-run and no command", calls)
+			}
+			if dataDir(t, record) == o.silo {
+				t.Error("dry-run exported the silo itself, not a copy")
+			}
+			if _, err := os.Stat(o.database); !os.IsNotExist(err) {
+				t.Errorf("dry-run created the database: %v", err)
+			}
+			o.siloUntouched(t)
+		})
+	}
+}
+
+func TestOpeningDryRunWithADatabaseRunsNothing(t *testing.T) {
+	o := openProject(t, 0)
+	if err := os.MkdirAll(filepath.Dir(o.database), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(o.database, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, _ := run(t, "--dry", "flow", "status")
+	if code != 0 || !strings.Contains(stdout, o.database) {
+		t.Fatalf("exit %d, stdout %q", code, stdout)
+	}
+	if len(*o.calls) != 0 {
+		t.Errorf("engine ran in a dry run: %q", *o.calls)
+	}
+}
+
+// An explicit migration without --source reads the same copy the
+// automatic one does; the operator's flags pass through.
+func TestExplicitMigrationExportsACopy(t *testing.T) {
+	o := openProject(t, 0)
+	o.withSilo(t)
+	record := fakeTask(t, `echo '[]'`)
+
+	code, _, stderr := run(t, "flow", "migrate", "taskwarrior", "--dry-run")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	calls := *o.calls
+	if len(calls) != 1 {
+		t.Fatalf("engine calls %q, want the migration only", calls)
+	}
+	if !slices.Contains(calls[0], "--dry-run") || slices.Contains(calls[0], "--apply") {
+		t.Errorf("migration %q lost the operator's --dry-run", calls[0])
+	}
+	if dataDir(t, record) == o.silo {
+		t.Error("explicit migration exported the silo itself")
+	}
+	o.siloUntouched(t)
+}
+
+// --dry wins over an explicit --apply, and a bare jacazul flow does not
+// crash.
+func TestDryRunNeverApplies(t *testing.T) {
+	o := openProject(t, 0)
+	o.withSilo(t)
+	fakeTask(t, `echo '[]'`)
+
+	if code, _, stderr := run(t, "--dry", "flow", "migrate", "taskwarrior", "--apply"); code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	for _, call := range *o.calls {
+		if slices.Contains(call, "--apply") {
+			t.Errorf("dry run applied: %q", call)
+		}
+	}
+	if _, err := os.Stat(o.database); !os.IsNotExist(err) {
+		t.Errorf("dry run created the database: %v", err)
+	}
+	run(t, "flow")
+}
+
+// Commands that open no storage do not trigger a migration.
+func TestOpeningSkipsCommandsWithoutStorage(t *testing.T) {
+	for _, command := range []string{"info", "help", "--help", "--version"} {
+		t.Run(command, func(t *testing.T) {
+			o := openProject(t, 0)
+			o.withSilo(t)
+			record := fakeTask(t, `echo '[]'`)
+
+			run(t, "flow", command)
+			if want := [][]string{{command}}; !slices.EqualFunc(*o.calls, want, slices.Equal) {
+				t.Errorf("engine calls %q, want %q", *o.calls, want)
+			}
+			if _, err := os.Stat(record); !os.IsNotExist(err) {
+				t.Error("task ran for a command that opens no storage")
+			}
 		})
 	}
 }
