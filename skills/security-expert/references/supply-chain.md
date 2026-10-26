@@ -1,96 +1,85 @@
-# Dependency Security Scanning
+# Supply Chain
 
-Catalog for dependency vulnerability analysis, SBOM generation, license risk review, and supply-chain remediation.
+Follow integrity from source to the artifact a user runs: who chose each
+input, what resolved it, which worker built it, and what proves the
+released thing is the reviewed thing. A vulnerable or mutable
+dependency matters when someone can influence it and a trusted build
+consumes it.
 
 References:
 - OSV vulnerability database: https://osv.dev/
 - OpenSSF Scorecard: https://securityscorecards.dev/
-- CycloneDX SBOM standard: https://cyclonedx.org/
-- Adapted in part from PocketCmds/Snyk dependency workflows (attribution in SKILL.md).
+- SLSA: https://slsa.dev/
+- CycloneDX: https://cyclonedx.org/
 
-## Use When
+## Adding a Dependency
 
-- Auditing dependencies for CVEs, malicious package risk, or license exposure.
-- Reviewing package-manager lockfiles or dependency update PRs.
-- Generating SBOMs for compliance or supply-chain visibility.
-- Planning remediation for vulnerable direct or transitive dependencies.
-- Reviewing automated security fix PRs.
+1. **Need:** does the standard library or an existing dependency cover
+   it?
+2. **Name:** check for typosquatting and lookalike names.
+3. **Source:** confirm the official registry entry and repository.
+4. **Health:** maintenance, maintainers, recent ownership changes.
+5. **Install behavior:** does it run lifecycle scripts on install?
+6. **Pinning:** record it in the lockfile; commit the lockfile.
 
-## Do Not Use When
+Let non-security updates age a few days before adopting them; most
+malicious releases are caught and pulled within that window.
 
-- There is no dependency manifest or lockfile.
-- The user only needs runtime security testing.
-- The environment forbids running or uploading scanner data.
-- Auto-fix would be unsafe without release/test approval.
+## Resolution Risks
 
-## Baseline Workflow
+- **Namespace confusion:** a resolver can pick a public package over a
+  private one of the same name, or fall back to another registry.
+- **Mutable inputs:** branches, tags, unpinned submodules, remote
+  includes, floating container tags and downloaded tools change without
+  review.
+- **Lifecycle scripts:** install hooks run arbitrary code on developer
+  and CI machines; disable them where the ecosystem allows and the
+  project does not need them.
+- **Generated content:** generated clients, vendored archives and
+  binary blobs enter the build without the review source gets; check
+  who controls the generator and its input.
+- **Build context:** local config, secrets or fixtures slip into a
+  package or image through broad build context and ignore rules.
 
-1. Detect ecosystems and manifests:
-   - npm/yarn/pnpm: `package.json`, lockfiles
-   - Python: `requirements.txt`, `pyproject.toml`, lockfiles
-   - Go: `go.mod`, `go.sum`
-   - Rust: `Cargo.toml`, `Cargo.lock`
-   - Java: `pom.xml`, `build.gradle`
-2. Prefer lockfile-aware scanning.
-3. Include transitive dependencies, not only direct dependencies.
-4. Generate or request SBOM when supply-chain visibility is in scope.
-5. Triage by severity, exploitability, exposure, and fix availability.
-6. Remediate with minimal safe upgrades where possible.
-7. Verify by re-running relevant checks and tests.
+## Vulnerability Triage
 
-## Tooling Examples
+1. Detect the ecosystems from their manifests and lockfiles.
+2. Scan with the lockfile; include transitive dependencies.
+3. Triage by reachability, exposure and fix availability, not by the
+   scanner's severity alone.
+4. Prefer the smallest safe upgrade; patches and overrides are
+   temporary.
+5. Re-run the check and the test suite after the fix.
 
-Use approved tooling available in the environment. Examples include:
+## Automated Fix PRs
 
-- Snyk Open Source: `snyk test`, `snyk monitor`, `snyk test --json`, `snyk test --sarif`
-- Trivy: dependency and container vulnerability scans
-- OSV Scanner: open-source vulnerability database checks
-- npm audit / pip-audit / cargo audit / govulncheck
-- Syft/CycloneDX tooling for SBOM generation
+- Confirm the advisory and that the affected path is used.
+- Identify whether the fix is direct, transitive, an override or a
+  patch.
+- Read the release notes for breaking changes.
+- Run the test suite before merging; never auto-merge untested.
 
-Do not require Snyk specifically unless the project already uses it.
+## Deferring a Vulnerability
 
-## Automated Fix PR Review
+Record the reason, the affected packages and paths, compensating
+controls and an expiry date; revisit before it expires. A permanent
+ignore without evidence is not a disposition.
 
-When reviewing automated dependency fix PRs:
+## Release and Provenance
 
-- Confirm the CVE/security advisory and affected path.
-- Identify whether the fix is direct, transitive, override-based, or patch-based.
-- Review release notes and breaking-change risk.
-- Run the relevant test suite before merge.
-- Prefer upgrades over temporary patches.
-- Require expiration dates and rationale for ignored/deferred vulnerabilities.
-- Verify the vulnerability is gone after merge.
-
-## Risk Acceptance Rules
-
-If a vulnerability is deferred:
-
-- Record the reason.
-- Record affected packages and paths.
-- Add an expiration date.
-- Identify compensating controls.
-- Revisit the decision before expiration.
-
-Permanent ignores without evidence are not acceptable.
+- Tests, review, signing and publication refer to the same immutable
+  digest, not a mutable tag or file name.
+- Sign important releases and verify signatures against the expected
+  workflow, repository and branch, not only "a valid signature".
+- Generate an SBOM (SPDX or CycloneDX) when consumers need inventory.
+- An updater authenticates version, channel and target as well as
+  payload bytes, and fails closed on missing or revoked metadata.
+- A checksum fetched from the same place as the artifact proves
+  nothing about the source.
 
 ## Common Mistakes
 
-- Scanning only direct dependencies.
-- Ignoring transitive dependency paths.
-- Running scans without lockfiles.
+- Scanning only direct dependencies, or scanning without a lockfile.
+- Treating scanner severity as the only priority signal.
 - Auto-merging fix PRs without tests.
 - Keeping ignores forever.
-- Failing to monitor main/default branch after initial scan.
-- Treating scanner severity as the only priority signal.
-
-## Output Template
-
-```text
-Finding: Vulnerable transitive dependency remains in runtime dependency graph.
-Impact: Attackers may exploit CVE-XXXX when the affected code path is reachable.
-Evidence: package-lock.json includes vulnerable package through dependency path A > B > C.
-Fix: Upgrade parent dependency or apply package-manager override to a patched version.
-Validation: Re-run dependency scan and project test suite; confirm CVE no longer appears.
-Priority: High
-```

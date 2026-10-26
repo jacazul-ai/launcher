@@ -1,170 +1,91 @@
-# SAST Security Scanning
+# SAST and Secure Code Review
 
-Catalog for Static Application Security Testing (SAST), secure code review, and framework-specific vulnerability patterns.
+Static review of source for vulnerability patterns. A pattern is a
+starting point: confirm that attacker-controlled input reaches the sink
+before calling it a finding.
 
 References:
 - OWASP Top 10: https://owasp.org/Top10/
 - OWASP Cheat Sheet Series: https://cheatsheetseries.owasp.org/
-- Adapted in part from PocketCmds/Snyk SAST guidance (attribution in SKILL.md).
+- CWE Top 25: https://cwe.mitre.org/top25/
 
-## Use When
+## Workflow
 
-- Reviewing source code for security vulnerabilities.
-- Adding security checks to CI/CD.
-- Investigating injection, XSS, command execution, path traversal, deserialization, weak crypto, or hardcoded secrets.
-- Auditing framework configuration for Django, Flask, Express, Rails, Spring, Laravel, or similar stacks.
-- Creating custom security rules for organization-specific patterns.
-
-## Do Not Use When
-
-- The user only needs runtime/pentest validation.
-- Source code is unavailable.
-- The environment forbids third-party scanning or code upload.
-- The target requires invasive testing without approval.
-
-## Tool Selection
-
-Use available approved tooling. Examples:
-
-- Multi-language: Semgrep, CodeQL, SonarQube
-- Python: Bandit, Ruff rules, framework-specific review
-- JavaScript/TypeScript: ESLint security plugins, no-secret rules
-- Java: SpotBugs, PMD, CodeQL
-- Ruby: Brakeman
-- Go: gosec, govulncheck
-- Rust: cargo clippy, cargo audit
-
-Do not require Snyk specifically unless the project already uses it.
-
-## Baseline Workflow
-
-1. Identify languages, frameworks, and security-relevant surfaces.
-2. Select scanner/rulesets appropriate to the codebase.
-3. Exclude generated/vendor/test directories carefully; do not hide real runtime code.
-4. Run scans with reproducible commands.
-5. Triage findings by severity, confidence, reachability, and exposure.
-6. Propose safe code-level fixes.
-7. Add regression tests or validation steps where practical.
-8. Document residual risk and false-positive rationale.
+1. Identify languages, frameworks and security-relevant surfaces.
+2. Use the scanners the project already configures; the tools catalog
+   names options when none is set.
+3. Exclude generated, vendored and test directories with care; never
+   hide runtime code.
+4. Triage by reachability, exposure and confidence.
+5. Propose the code-level fix and a regression test.
+6. Record false-positive rationale and residual risk.
 
 ## Vulnerability Patterns
 
-### SQL/Query Injection
+### SQL and Query Injection
 
-Red flags:
-- String concatenation or formatting in queries.
-- User input passed directly into query builders.
+- **Red flags:** string formatting or concatenation in queries; input
+  passed straight into query builders.
+- **Fix:** bound parameters; ORM filters; allowlisted fields for dynamic
+  sorting and filtering.
 
-Preferred fixes:
-- Parameterized queries.
-- ORM filters with bound parameters.
-- Allowlisted query fields for dynamic sorting/filtering.
+### Cross-Site Scripting
 
-### Cross-Site Scripting (XSS)
-
-Red flags:
-- `innerHTML`, `outerHTML`, `document.write` with unsanitized input.
-- Template escaping disabled.
-
-Preferred fixes:
-- Text rendering APIs for plain text.
-- Framework auto-escaping.
-- Sanitization such as DOMPurify only when HTML is required.
-- CSP where appropriate.
-
-### Hardcoded Secrets
-
-Red flags:
-- API keys, cloud keys, tokens, passwords, private keys in source or config.
-
-Preferred fixes:
-- Environment or vault-backed secret lookup.
-- Rotation of exposed credentials.
-- Secret scanning in CI and pre-commit where appropriate.
-
-### Path Traversal
-
-Red flags:
-- File paths derived from request/user input.
-
-Preferred fixes:
-- Canonicalize paths.
-- Enforce allowlisted base directories.
-- Reject paths escaping the allowed root.
-
-### Insecure Deserialization
-
-Red flags:
-- `pickle.loads`, unsafe YAML load, native object deserialization from untrusted input.
-
-Preferred fixes:
-- JSON or safe parsers.
-- `yaml.safe_load` where YAML is required.
-- Schema validation.
+- **Red flags:** `innerHTML`, `outerHTML`, `document.write` with
+  untrusted data; template auto-escaping turned off.
+- **Fix:** text APIs for text; framework escaping; a sanitizer only when
+  HTML is required; a content security policy.
 
 ### Command Injection
 
-Red flags:
-- `shell=True`, `os.system`, shell string interpolation.
+- **Red flags:** `shell=True`, `os.system`, shell strings built from
+  input.
+- **Fix:** argument arrays without a shell; allowlisted arguments.
 
-Preferred fixes:
-- Argument arrays.
-- Avoid shell invocation.
-- Validate/allowlist user-controlled arguments.
+### Path Traversal
+
+- **Red flags:** file paths built from request or user input; archive
+  extraction without checking entry names.
+- **Fix:** canonicalize, then require the result inside an allowlisted
+  root; reject `..` and absolute entries.
+
+### Insecure Deserialization
+
+- **Red flags:** `pickle.loads`, unsafe YAML loading, native object
+  deserialization of untrusted data.
+- **Fix:** JSON or safe loaders with schema validation.
+
+### Server-Side Request Forgery
+
+- **Red flags:** the server fetches a URL or host the caller controls.
+- **Fix:** allowlist destinations; check the resolved address at
+  connection time, after redirects, and block metadata and internal
+  ranges.
+
+### Hardcoded Secrets
+
+- **Red flags:** keys, tokens, passwords or private keys in source or
+  config.
+- **Fix:** environment or vault lookup; rotate anything exposed.
 
 ### Insecure Randomness
 
-Red flags:
-- Non-cryptographic RNG for tokens, sessions, reset links, or secrets.
-
-Preferred fixes:
-- Cryptographic random APIs such as Python `secrets`.
+- **Red flags:** a non-cryptographic generator for tokens, sessions or
+  reset links.
+- **Fix:** the platform's cryptographic random source.
 
 ## Framework Checks
 
-### Django
+| Framework | Check |
+|---|---|
+| Django | `DEBUG` off in production; secret key from a secret store; CSRF and security middleware on; secure cookies; host validation |
+| Flask | No `debug=True` in production; secret key from config; CORS not wildcard unless public |
+| Express | Security headers; CORS allowlist; rate limits on sensitive routes; secure session cookies |
 
-Check for:
-- `DEBUG=False` in production.
-- Strong secret key loaded from a safe secret source.
-- CSRF and security middleware enabled.
-- Secure cookies and HTTPS settings.
-- `X_FRAME_OPTIONS` and host validation.
+## Adding SAST to CI
 
-### Flask
-
-Check for:
-- No `debug=True` in production.
-- Strong secret key from safe config.
-- CORS not wildcard unless truly public.
-- Security headers via approved middleware where appropriate.
-
-### Express.js
-
-Check for:
-- Security headers (e.g. Helmet or equivalent).
-- CORS allowlists.
-- Rate limiting for sensitive endpoints.
-- Secure cookies and session config.
-
-## CI/CD Integration Rules
-
-When adding SAST to CI:
-
-- Use minimal workflow permissions.
-- Avoid uploading proprietary code to external services without approval.
-- Keep report artifacts free of secrets.
-- Prefer SARIF/security-tab upload where appropriate.
-- Avoid blocking releases on noisy untuned rules without a rollout plan.
-- Track baseline debt separately from new findings.
-
-## Output Template
-
-```text
-Finding: User input reaches shell command construction.
-Impact: An attacker may execute arbitrary commands in the application runtime.
-Evidence: app/tasks.py builds a shell string with request parameter `name` and calls subprocess with shell=True.
-Fix: Use subprocess argument arrays and validate `name` against an allowlist.
-Validation: Add regression test with shell metacharacters and run SAST rule again.
-Priority: Critical
-```
+- Minimal workflow permissions.
+- No upload of proprietary code to an outside service without approval.
+- Reports free of secrets.
+- Track baseline debt apart from new findings; do not block on untuned
+  noisy rules without a rollout plan.
