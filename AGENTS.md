@@ -109,6 +109,14 @@ reference branch and fast-forwarded, so history stays linear.
 - integration: linear
 - reference: master
 
+## Security Review
+
+Pinned for `security-expert` in code review: the changed code plus the
+affected context (callers, callees, trust boundaries, side effects). A
+request for one review may raise it.
+
+- depth: medium
+
 ## 📚 Documentation Mandate
 
 - **Order:** Implementation → Test → Docs; all three before `tw-flow done`.
