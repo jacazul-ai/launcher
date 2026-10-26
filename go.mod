@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/jacazul-ai/flow v0.0.0-20261022150532-0aeb67be2275
 	github.com/jessevdk/go-flags v1.6.1
+	modernc.org/sqlite v1.54.0
 )
 
 require (
@@ -23,5 +24,4 @@ require (
 	modernc.org/libc v1.74.3 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.54.0 // indirect
 )
