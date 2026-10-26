@@ -84,18 +84,25 @@ with `git log -1 --format=%b | cat -A` and confirm that no literal `\n` appears.
 
 ### Security Expert
 **Status:** ✅ Active
-**Documentation:** [`skills/security-expert/SKILL.md`](../../skills/security-expert/SKILL.md)
+**Documentation:** [`skills/security-expert/SKILL.md`](../../skills/security-expert/SKILL.md) and [Security Expert Guide](../security-expert.md)
 
-Repository security review system for CI/CD, secrets, dependency supply chain,
-GitHub Actions, cache poisoning, and automation hardening.
+Repository security in three moments: a light checklist while developing,
+topic guidance for CI/CD, secrets, supply chain, auth, cloud and agent
+tools, and a full audit inside every code review. A thin hub routes to
+nine local references.
 
 **Trigger → Action**
-- When reviewing GitHub Actions, activate `security-expert` and inspect triggers,
-  permissions, `actions/cache`, `restore-keys`, artifacts, and secrets.
-- When a workflow handles PRs from forks or uses `pull_request_target`, treat the
-  code path as hostile until proven otherwise.
-- When deploy/release jobs restore caches, verify the cache cannot be written by
-  untrusted workflows.
+- When a code change is about to be called done, walk the light checklist;
+  it flags without blocking and warns once on a plaintext secret or
+  untrusted code in a privileged context.
+- When reviewing GitHub Actions, read `references/ci-cd.md` and inspect
+  triggers, permissions, `actions/cache`, `restore-keys`, artifacts, and
+  secrets.
+- When a workflow handles PRs from forks or uses `pull_request_target`, treat
+  the code path as hostile until proven otherwise.
+- When any diff is reviewed, `security-expert` joins as a `code-review`
+  extension at the depth pinned in the `## Security Review` section of
+  `AGENTS.md` (default `medium`).
 - When secrets or credentials are involved, prefer least privilege, OIDC, and
   short-lived tokens.
 
@@ -110,21 +117,23 @@ GitHub Actions, cache poisoning, and automation hardening.
 Global code-review vocabulary and policy. Owns the review method, the
 scenario format, the tracks (Foundations, Boundaries, Systems), the areas,
 the technical levels, the advisory outcomes, the evidence labels, and the
-mapping of security priorities onto the scale. Language skills add scenarios
+mapping of scanner severities onto the scale. Language skills add scenarios
 in their own `CODE-REVIEW.md` and reference this shared scale.
 
 **Trigger → Action**
-- When reviewing any code, activate `code-review` plus the language expert;
-  classify technical level and advisory separately and tag the area.
+- When reviewing any code, activate `code-review`, the language skill in use
+  and `security-expert`; classify technical level and advisory separately and
+  tag the area.
 - When `code-review` is activated alone, it detects the languages in the
-  diff, activates each matching expert and reads its `CODE-REVIEW.md`; a
-  language without an extension is reviewed core-only and named as missing.
+  diff and uses the language skill in use for each, or an installed one; a
+  language no skill covers is reviewed core-only and named as missing.
 - When a non-blocking finding is actionable, fix it now or create a linked
   tech-debt task with context and acceptance criteria.
 - When a language-specific review skill exists (`go-expert`, `rust-expert`),
   use its scenarios with this global scale instead of redefining labels.
-- When `security-expert` reports Critical/High/Medium/Low, map them to
-  BLOCKER/BLOCKER/WARNING/SUGGESTION under area `SECURITY`.
+- When a security scanner reports Critical/High/Medium/Low, map them to
+  BLOCKER/WARNING/SUGGESTION/NIT under area `SECURITY`, promoting by
+  consequence; `security-expert` reports on this scale directly.
 
 **Location:** `/project/skills/code-review/`
 

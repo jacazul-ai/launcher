@@ -25,6 +25,7 @@ Welcome to the Jacazul Launcher documentation. This project is built around the 
 - [Shell Expert](bash-expert.md) - POSIX sh and bash, sh-mode, sh-census, set -e truth table, portability and idempotence.
 - [Git Expert](git-expert.md) - Commit standards, git-mode workflow pin and detection, git-census before push, non-interactive rebase recipes.
 - [Go Expert](go-expert.md) - Idiomatic Go, gofmt-to-goimports formatting, and Line of Sight readability.
+- [Security Expert](security-expert.md) - Light checklist while developing, full audit in every code review, review depth pinned in `AGENTS.md`.
 - [UI Expert](ui-expert.md) - UI verified in a real browser with computed values, browsers launched never attached, `jacazul ui doctor`.
 - [Tutors](tutor.md) - Learning a language with a tutor paired to its expert.
 - [Skill Authoring Methodology](skill-methodology.md) - Subject-agnostic rules for writing and maintaining any skill: descriptions, bodies, reference-vs-skill, cross-references, evaluation.
