@@ -93,21 +93,23 @@ how bad it is.
 | `CLARITY` | Naming, readability, documentation, misleading structure |
 | `MAINTENANCE` | Duplication, drift, dead code, generated artifacts |
 
-## Security priority mapping
+## Security scanner mapping
 
-`security-expert` reports formal audits with Critical, High, Medium, and Low.
-In a code review those map onto the technical scale under area `SECURITY`:
+`security-expert` reports on this scale directly. Security scanners and
+external audits report Critical, High, Medium, and Low; those map onto
+the technical scale under area `SECURITY`, with `TOOL` evidence:
 
-| Security priority | Technical level | Default advisory |
+| Scanner severity | Technical level | Default advisory |
 |---|---|---|
 | Critical | `BLOCKER` | `FIX-NOW` |
-| High | `BLOCKER` | `FIX-NOW` |
-| Medium | `WARNING` | `FIX-OR-TECH-DEBT` |
-| Low | `SUGGESTION` | `FIX-OR-TECH-DEBT` or `ACCEPTED` |
+| High | `WARNING` | `FIX-OR-TECH-DEBT` |
+| Medium | `SUGGESTION` | `FIX-OR-TECH-DEBT` or `ACCEPTED` |
+| Low | `NIT` | `ACCEPTED` |
 
-Promote Medium to `BLOCKER` when the surface is exposed to untrusted input
-and no compensating control exists. A formal audit may report both
-vocabularies; a review comment uses the technical scale.
+The consequence decides, as everywhere on this scale. Promote a High to
+`BLOCKER` when a trace shows untrusted input reaching it and no
+compensating control exists; lower a Critical whose affected code is
+never reached, and say why.
 
 ## Technical levels
 
@@ -262,27 +264,36 @@ clock contract and UTC/DST cases.
 
 ## Two entry points
 
-A review can start from either side; both must end with the same three
-skills active: this core, the language expert, and its `CODE-REVIEW.md`.
+A review can start from either side; both must end with the same skills
+active: this core, the language skill in use for each language in the
+diff, and `security-expert` with its `CODE-REVIEW.md`.
 
-- **Language first.** The language expert is already active (Go, Rust,
-  Python, JS/TS context) and a review is requested. The expert's `SKILL.md`
-  points here for the scale; its `CODE-REVIEW.md` supplies the scenarios.
+The language skill in use is the one the operator works with for that
+language, which need not be a Jacazul expert: someone who disabled
+`go-expert` for another Go skill reviews Go with that skill.
+
+- **Language first.** A language skill is already active and a review is
+  requested. A Jacazul expert's `SKILL.md` points here for the scale; its
+  `CODE-REVIEW.md` supplies the scenarios.
 - **Core first.** This skill is activated on its own (`[REVIEW]`,
   `[PR-REVIEW]`, "review this diff", a consensus review) before any
-  language expert. Then:
+  language skill. Then:
   1. Detect the languages in the diff or target from file extensions and
      manifests (`go.mod`, `Cargo.toml`, `pyproject.toml`/`setup.py`,
      `package.json`/`tsconfig.json`).
-  2. Activate the matching `<lang>-expert` for each language found and read
-     its `CODE-REVIEW.md` from the list below.
-  3. Run the expert's mode probe when it has one (`py-mode`, `js-mode`) so
+  2. For each language, use the language skill in use; if none is in use,
+     activate an installed skill for it, preferring the known extension
+     listed below, and read its review scenarios.
+  3. Run the skill's mode probe when it has one (`py-mode`, `js-mode`) so
      mode-aware findings apply.
-  4. For a language with no extension yet, review with this core alone,
-     label the findings as core-only, and say which extension is missing.
+  4. For a language no installed skill covers, review with this core
+     alone, label the findings as core-only, and say which extension is
+     missing.
+  5. Activate `security-expert` for every diff; it audits the changed code
+     and its affected context.
 
-Never review a language with the core alone when its extension exists; the
-scenarios are where the failure modes live.
+Never review a language with the core alone when a skill for it is
+installed; the scenarios are where the failure modes live.
 
 ## Bizus (tips that fire by situation)
 
@@ -295,8 +306,13 @@ moment. They are rules, not decoration.
   Boundaries for resources and lifecycle, Systems for contracts and
   security) as a self-review. No finding is written; the fix lands in the
   change.
+- 💡 **About to call a code change done?** Walk the light checklist of
+  `security-expert` over what you touched. It flags without blocking and
+  warns once on a plaintext secret or untrusted code in a privileged
+  context; proof and blocking wait for the review.
 - 💡 **Loaded this core?** Go to the language: detect it, activate the
-  expert, read its review file. The core alone has no failure modes.
+  language skill in use, read its review file. The core alone has no
+  failure modes.
 - 💡 **Being reviewed?** Report and read findings on this scale: level,
   advisory, area, evidence. A finding without an advisory is not
   actionable; ask for one.
@@ -331,14 +347,16 @@ labels differently:
 | Minor, Low, Trivial, Nit, Style, Info, P3 | `NIT` | `ACCEPTED` |
 | "Request changes" (GitHub review state) | at least one `BLOCKER` or `WARNING` with `FIX-NOW` | `FIX-NOW` |
 | "Comment" (GitHub review state) | `SUGGESTION` or `NIT` | per finding |
-| Security scanners (Critical, High, Medium, Low) | see [security priority mapping](#security-priority-mapping) | per table |
+| Security scanners (Critical, High, Medium, Low) | see [security scanner mapping](#security-scanner-mapping) | per table |
 
 An external "Minor" that can corrupt data is still a `BLOCKER` here; the
 mapping is a default, and the consequence decides.
 
 ## Language-specific extensions
 
-Each `<lang>-expert` skill plugs into this core through a fixed contract:
+Each Jacazul expert plugs into this core through a fixed contract; a
+language skill from elsewhere is used as it is, with its findings mapped
+onto this scale:
 
 - Its `SKILL.md` links this file and its own `CODE-REVIEW.md`.
 - Its `CODE-REVIEW.md` contains scenarios in the [scenario format](#scenario-format),
@@ -347,8 +365,10 @@ Each `<lang>-expert` skill plugs into this core through a fixed contract:
   file links it rather than repeating it.
 - Findings use the levels, advisories, areas, and evidence defined here.
 
-Current extensions:
+Known extensions:
 
+- Security: [Security review directives](../security-expert/CODE-REVIEW.md)
+  for every diff, alongside the language of the diff.
 - Go: [Go review directives](../go-expert/CODE-REVIEW.md).
 - Rust: [Rust review directives](../rust-expert/CODE-REVIEW.md).
 - Python: [Python review directives](../python-expert/CODE-REVIEW.md).
@@ -359,10 +379,13 @@ Current extensions:
 - Git: [Git review directives](../git-expert/CODE-REVIEW.md) for commits,
   series and history operations, alongside the language of the diff.
 
-Detection map for the core-first entry point:
+Detection map for the core-first entry point. The expert column is the
+known extension; a different language skill in use for that language
+takes its place:
 
 | Evidence in the target | Expert to activate | Mode probe |
 |---|---|---|
+| Any diff | `security-expert` | none (resolve the review depth) |
 | A commit range, a branch or PR to integrate, a history rewrite | `git-expert` | `git-mode`, `git-census --range <base>..<tip>` |
 | `go.mod`, `*.go` | `go-expert` | none (read the `go` directive) |
 | `Cargo.toml`, `*.rs` | `rust-expert` | none (read `edition`, `rust-version`) |
