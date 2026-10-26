@@ -102,9 +102,9 @@ Treat these as target outcomes, not claims to make without proof:
 
 Load the relevant catalog when the topic matches:
 
-- [GitHub Actions cache poisoning](github-actions-cache-poisoning.md): Actions Cache Blasting, `actions/cache`, `restore-keys`, PR workflows, privileged jobs, and cache trust boundaries.
-- [Dependency security scanning](dependency-security-scanning.md): CVEs, transitive dependencies, SBOMs, license risk, automated fix PRs, and risk acceptance.
-- [SAST security scanning](sast-security-scanning.md): static analysis, secure code review, framework checks, vulnerability patterns, and CI integration.
+- [GitHub Actions cache poisoning](references/ci-cd.md): Actions Cache Blasting, `actions/cache`, `restore-keys`, PR workflows, privileged jobs, and cache trust boundaries.
+- [Dependency security scanning](references/supply-chain.md): CVEs, transitive dependencies, SBOMs, license risk, automated fix PRs, and risk acceptance.
+- [SAST security scanning](references/sast.md): static analysis, secure code review, framework checks, vulnerability patterns, and CI integration.
 
 ## Output Standard
 
