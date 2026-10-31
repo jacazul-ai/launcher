@@ -45,6 +45,7 @@ Welcome to the Jacazul Launcher documentation. This project is built around the 
 - [Pi Durable Research](research/pi-durable.md) - Evaluates Pi Durable, Cloudflare PiHarness, and a possible Jacazul durable runtime.
 - [Personas Proposal](proposals/personas.md) - A persona changes the voice, never the content; on-demand and user-defined personas.
 - [EXECUTOR Mode Proposal](proposals/executor-mode.md) - A spawned agent that works a task unattended, replacing UNHINGED.
+- [Agent Mailbox Proposal](proposals/agent-mailbox.md) - Messages between agents across sessions and projects through files and `jacazul mail`, in any harness.
 - [NO BULLSHIT Policy](agents/no-bullshit-policy.md) - Our feedback standard.
 
 ---
