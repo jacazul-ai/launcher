@@ -198,9 +198,11 @@ can run the export itself, but it looks `task` up on `PATH`, where a Jacazul
 session puts the `scripts/task` guard first; until it accepts an explicit
 binary, `jacazul` finds the real `task` (`JACAZUL_REAL_TASK`, then `PATH`
 without `scripts/`, then the usual install paths), runs the export and
-hands it over with `--source`, the engine's offline path. Three failures
-stop with `ACTION:`: no `task` binary (the prompt below), the export
-failed, or the export is not valid JSON.
+hands it to `flow.MigrateTaskwarrior` as the `Source`. The same copy is
+the `LegacyDataDir`, so focus, sessions and handoff notes come along, and
+the silo's canonical path is the `Origin` the database records. Three
+failures stop with `ACTION:`: no `task` binary (the prompt below), the
+export failed, or the export is not valid JSON.
 
 ### Opening a project
 
@@ -214,7 +216,7 @@ stop writing to migrated silos.
 | Flow database | Taskwarrior silo | `task` binary | What `jacazul` does |
 |---|---|---|---|
 | exists | any | any | Opens it with `flow.Init`, which upgrades its schema when needed. |
-| missing | exists | found | Runs the engine's migration, then uses the engine. |
+| missing | exists | found | Migrates a copy of the silo with `flow.MigrateTaskwarrior` (a dry-run, then the apply), then runs the command. |
 | missing | exists | missing | Asks: install Taskwarrior, or proceed without the migration. |
 | missing | missing | any | Creates a new flow database with `flow.Init`. |
 
@@ -276,8 +278,11 @@ the database is current, and passes `-v` to the engine. It is long-only:
 
 The rarer paths:
 
-- A failed migration stops with `ACTION:` and creates no flow database, so
-  the next run can try again.
+- `ERROR` issues never stop the migration. Every issue is printed as the
+  engine words it (`ERROR: task <uuid> ...`), the records are migrated as
+  each line says, and an `ACTION:` sends the agent to the tasks named.
+- Any other failed migration stops with the engine's `ACTION:` and leaves
+  no flow database, so the next run can try again.
 - Choosing to install prints the system's install command and exits; the
   next run finds `task` and migrates. Any answer but proceed counts as
   install.
@@ -287,8 +292,12 @@ The rarer paths:
   triggered it stays clean.
 - `info`, `help`, and `--help` or `--version` before the command open no
   storage and trigger nothing.
-- `jacazul flow migrate taskwarrior` without `--source` exports the same
-  copy; the operator's `--dry-run` or `--apply` pass through.
+- `jacazul flow migrate taskwarrior` without `--source` is the same
+  migration through the same library call, so its database records the
+  origin too: `--apply` writes, anything else is a dry-run. Any other
+  migration option is refused with an `ACTION:`; to use the engine's own
+  options, export the data and pass it with `--source`, which runs the
+  engine's command as it is (that path records no origin).
 - `jacazul --dry flow <command>` (or `DRY=true`) prints the database, the
   silo, the `task` binary and the decision, runs the migration as a
   dry-run, and runs no command: nothing is written, whatever the command
@@ -345,6 +354,11 @@ func EnvFromOS() Env // standalone mains only; jacazul must not use it
 // Init creates, moves or upgrades the project database and prints
 // nothing; Origin is set when MigrateTaskwarrior wrote the database.
 func Init(ctx context.Context, env flow.Env) (flow.InitResult, error)
+
+// MigrateTaskwarrior migrates an export into a new database: a dry-run
+// writes nothing; the apply writes the records and the Origin mark in one
+// transaction, or nothing. It refuses an existing database.
+func MigrateTaskwarrior(ctx context.Context, env flow.Env, options flow.MigrateOptions) (flow.MigrateResult, error)
 ```
 
 `Run` never calls `os.Exit`, never reads the process environment or `os.Args`,

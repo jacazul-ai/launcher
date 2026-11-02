@@ -46,8 +46,8 @@ You see:
    silo      /home/<you>/.jacazul-ai/.task/<PROJECT_ID> (Taskwarrior data)
    task      /usr/bin/task
    action    migrate a copy of the silo
-Migration dry-run: no changes written
-Records: created=... dependencies=... annotations=... tags=... issues=...
+WARNING: task <uuid>: ...
+🐊 jacazul flow (dry): would migrate /home/<you>/.jacazul-ai/.task/<PROJECT_ID> (created ..., dependencies ..., annotations ..., tags ..., issues ...); nothing is written
 ```
 
 | Line | It is right when |
@@ -56,7 +56,7 @@ Records: created=... dependencies=... annotations=... tags=... issues=...
 | `silo` | it is the project's directory under `~/.jacazul-ai/.task/` and says `Taskwarrior data` |
 | `task` | it is the real binary, never `.../scripts/task` (the Jacazul guard) |
 | `action` | `migrate a copy of the silo` for a project not migrated yet, `use the flow database` after |
-| report | `no changes written`, and no `ERROR` lines; `WARNING` lines are records the engine kept in another form |
+| report | `nothing is written`; `WARNING` lines are records the engine kept in another form; `ERROR` lines name tasks to check after the migration, which still runs |
 
 ## 4. Prove nothing was written
 
@@ -81,12 +81,12 @@ HOME="$S/home" JACAZUL_HOME= TASKDATA= \
   /tmp/jacazul --home "$S/legacy" --project <PROJECT_ID> flow status
 ```
 
-`🔄 jacazul flow: migrating ...` and `Migration applied` go to stderr, then
-`status` runs on the new database in `$S/home/.jacazul/projects/`. Run the
-same command again: it must not migrate a second time. Add `--verbose`
-before `flow` to see what opening decided on that run. Until the migration
-records its origin in the database, this second run also warns that the
-Taskwarrior data is still in place. Then:
+`🔄 jacazul flow: migrating ...`, the issues and `🐊 jacazul flow: migrated
+...` go to stderr, then `status` runs on the new database in
+`$S/home/.jacazul/projects/`. Run the same command again: it must neither
+migrate a second time nor warn about the Taskwarrior data, because the
+database records that it came from that silo. Add `--verbose` before
+`flow` to see what opening decided on that run. Then:
 
 ```bash
 sha256sum -c "$S/copy.sha"    # the copy of the silo is unchanged too
@@ -100,7 +100,7 @@ rm -rf "$S"
 | `action ask: install Taskwarrior ...` | no real `task` was found | install Taskwarrior, or set `JACAZUL_REAL_TASK` |
 | `Taskwarrior export failed: ...` | `task` refused the copy; its own message follows | fix what `task` says; the silo was not changed |
 | `decode Taskwarrior export: ...` | the export has a value the engine cannot read | report it to the engine (`jacazul-ai/flow`) with the field name |
-| `ERROR` lines in the report | records the engine could not migrate | read them before the first real `jacazul flow` command |
+| `ERROR` lines in the report | records the engine migrated in another form than Taskwarrior had them | check each task the line names (`task <uuid>`) |
 | `sha256sum: FAILED` | the silo changed | stop and report it: the storage check must never write there |
 | `the Taskwarrior data at ... is still in place` | the flow database did not come from migrating this silo | the flow database is in use; move the silo out once you no longer need it |
 | `--project is set by jacazul` (or another engine option) | an engine option that would open another database | use what the `ACTION:` names: a `jacazul` option before `flow`, or `JACAZUL_FLOW_DATABASE_PATH` |
