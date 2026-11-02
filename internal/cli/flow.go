@@ -35,7 +35,8 @@ func runFlow(opts Options, args []string, stdout, stderr io.Writer) int {
 // engine runs args in the embedded engine with the context the launcher
 // resolved, and returns the engine's exit status. The engine's output,
 // ACTION: guidance included, reaches the operator unchanged. Before any
-// command but migrate, opening the project settles its storage.
+// command but migrate, opening the project settles its storage; init is
+// that opening and nothing more.
 //
 // The flow database lives under ~/.jacazul/projects; --home and
 // JACAZUL_HOME still name the legacy runtime home, whose .task silo is
@@ -80,7 +81,7 @@ func engine(opts Options, args []string, stdout, stderr io.Writer) int {
 		return migrate(ctx, task, silo, env, streams, args)
 	}
 	if opensStorage(args) && args[0] != "migrate" {
-		if code := openStorage(ctx, root, silo, env, streams, false); code != 0 {
+		if code := openStorage(ctx, root, silo, env, streams, false); code != 0 || args[0] == "init" {
 			return code
 		}
 	}

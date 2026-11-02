@@ -14,6 +14,8 @@ import (
 // opening is one project being opened: its Taskwarrior silo, its flow
 // database and the engine calls the launcher makes.
 type opening struct {
+	id       string
+	home     string // the flow home, ~/.jacazul
 	silo     string
 	database string
 	calls    *[][]string
@@ -28,6 +30,8 @@ func openProject(t *testing.T, migrateCode int) opening {
 	l := setup(t)
 	id := filepath.Base(filepath.Dir(l.project)) + "_" + filepath.Base(l.project)
 	o := opening{
+		id:       id,
+		home:     filepath.Join(l.home, ".jacazul"),
 		silo:     filepath.Join(l.home, ".jacazul-ai", ".task", id),
 		database: filepath.Join(l.home, ".jacazul", "projects", id, "flow.sqlite3"),
 		calls:    &[][]string{},
@@ -82,6 +86,28 @@ func (o opening) withSilo(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(o.silo, name), []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// withDatabase creates the project database with the pinned engine. A
+// non-empty origin makes it the database a migration from origin wrote.
+func (o opening) withDatabase(t *testing.T, origin string) {
+	t.Helper()
+	env := flow.Env{ProjectID: o.id, Home: o.home, DatabasePath: o.database}
+	if origin == "" {
+		if _, err := flow.Init(context.Background(), env); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	export := filepath.Join(t.TempDir(), "export.json")
+	task := `[{"uuid":"8e1d2c4a-0000-4000-8000-000000000001","description":"Ship it","status":"pending","entry":"20261101T000000Z"}]`
+	if err := os.WriteFile(export, []byte(task), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	options := flow.MigrateOptions{Source: export, Origin: origin, Apply: true}
+	if _, err := flow.MigrateTaskwarrior(context.Background(), env, options); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -144,12 +170,7 @@ func TestOpeningUsesAnExistingDatabase(t *testing.T) {
 	o := openProject(t, 0)
 	o.withSilo(t)
 	record := fakeTask(t, "")
-	if err := os.MkdirAll(filepath.Dir(o.database), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(o.database, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	o.withDatabase(t, canonical(o.silo))
 
 	if code, _, stderr := run(t, "flow", "status"); code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, stderr)
@@ -218,15 +239,110 @@ echo '[{"uuid":"8e1d2c4a-0000-4000-8000-000000000001","description":"Ship it"}]'
 	}
 }
 
+// Opening creates the database itself and says so, so a new database never
+// appears without a word; the command's own output stays on stdout.
 func TestOpeningWithoutDataCreatesTheDatabase(t *testing.T) {
 	o := openProject(t, 0)
 	noTask(t)
 
-	if code, _, stderr := run(t, "flow", "status"); code != 0 {
+	code, stdout, stderr := run(t, "flow", "status")
+	if code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, stderr)
 	}
 	if want := [][]string{{"status"}}; !slices.EqualFunc(*o.calls, want, slices.Equal) {
 		t.Errorf("engine calls %q, want %q", *o.calls, want)
+	}
+	if !exists(o.database) {
+		t.Fatal("no database after opening")
+	}
+	if want := "created the project database at " + o.database; !strings.Contains(stderr, want) {
+		t.Errorf("stderr %q lacks %q", stderr, want)
+	}
+	if stdout != "" {
+		t.Errorf("stdout %q, want it left to the command", stdout)
+	}
+}
+
+func TestOpeningACurrentDatabaseIsSilent(t *testing.T) {
+	o := openProject(t, 0)
+	o.withDatabase(t, "")
+
+	code, stdout, stderr := run(t, "flow", "status")
+	if code != 0 || stdout != "" || stderr != "" {
+		t.Fatalf("exit %d, stdout %q, stderr %q, want a silent run", code, stdout, stderr)
+	}
+}
+
+// While the silo stays in place next to a database that did not come from
+// migrating it, every run warns; only a migration from that silo, or the
+// silo moving out, ends it. The warning never stops the command.
+func TestOpeningWarnsWhileTheSiloOutlivesAForeignDatabase(t *testing.T) {
+	for name, origin := range map[string]func(o opening) string{
+		"no migration": func(opening) string { return "" },
+		"another silo": func(o opening) string { return canonical(filepath.Join(filepath.Dir(o.silo), "other")) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			o := openProject(t, 0)
+			o.withSilo(t)
+			o.withDatabase(t, origin(o))
+			record := fakeTask(t, "")
+
+			for range 2 {
+				code, _, stderr := run(t, "flow", "status")
+				if code != 0 {
+					t.Fatalf("exit %d, stderr %q", code, stderr)
+				}
+				if !strings.Contains(stderr, o.silo) || !strings.Contains(stderr, "ACTION:") {
+					t.Errorf("stderr %q, want a warning naming the silo with an ACTION:", stderr)
+				}
+			}
+			if want := [][]string{{"status"}, {"status"}}; !slices.EqualFunc(*o.calls, want, slices.Equal) {
+				t.Errorf("engine calls %q, want %q", *o.calls, want)
+			}
+			if _, err := os.Stat(record); !os.IsNotExist(err) {
+				t.Error("task ran although the database exists")
+			}
+			o.siloUntouched(t)
+		})
+	}
+}
+
+// A database migrated from this very silo is the right one: no warning,
+// even when the launcher reaches the silo through a symbolic link.
+func TestOpeningADatabaseMigratedFromTheSiloIsSilent(t *testing.T) {
+	o := openProject(t, 0)
+	o.withSilo(t)
+	o.withDatabase(t, canonical(o.silo))
+	link := filepath.Join(t.TempDir(), "home")
+	if err := os.Symlink(filepath.Dir(filepath.Dir(o.silo)), link); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, args := range [][]string{{"flow", "status"}, {"--home", link, "flow", "status"}} {
+		if code, stdout, stderr := run(t, args...); code != 0 || stdout != "" || stderr != "" {
+			t.Errorf("%q: exit %d, stdout %q, stderr %q, want a silent run", args, code, stdout, stderr)
+		}
+	}
+}
+
+// jacazul flow init is opening the project: it creates the database and
+// says so, and the engine is not asked to do it again.
+func TestFlowInitIsOpeningTheProject(t *testing.T) {
+	o := openProject(t, 0)
+
+	code, _, stderr := run(t, "flow", "init")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	if len(*o.calls) != 0 {
+		t.Errorf("engine calls %q, want none", *o.calls)
+	}
+	if !exists(o.database) || !strings.Contains(stderr, "created the project database") {
+		t.Errorf("database %s not created and reported: stderr %q", o.database, stderr)
+	}
+
+	if code, stdout, stderr := run(t, "flow", "init"); code != 0 || stdout != "" || stderr != "" {
+		t.Errorf("second init: exit %d, stdout %q, stderr %q, want a silent run", code, stdout, stderr)
 	}
 }
 
@@ -281,6 +397,14 @@ func TestOpeningWithoutTaskAsksTheOperator(t *testing.T) {
 			}
 			if !slices.EqualFunc(*o.calls, tc.calls, slices.Equal) {
 				t.Errorf("engine calls %q, want %q", *o.calls, tc.calls)
+			}
+			// Proceeding is a fresh database, created and reported by
+			// opening; installing creates nothing.
+			if exists(o.database) != (tc.code == 0) {
+				t.Errorf("database exists %v after %q", exists(o.database), tc.answer)
+			}
+			if tc.code == 0 && !strings.Contains(stderr, "created the project database") {
+				t.Errorf("stderr %q does not report the new database", stderr)
 			}
 			o.siloUntouched(t)
 		})

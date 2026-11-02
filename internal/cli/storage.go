@@ -52,8 +52,9 @@ func opensStorage(args []string) bool {
 // openStorage settles the project's storage before an engine command, as
 // "Opening a project" in docs/ARCHITECTURE.md lays out: an existing flow
 // database is used, a Taskwarrior silo is migrated, and nothing at all
-// means a new database. It returns non-zero when the command must not run.
-// The silo is only ever read.
+// means a new database. Using or creating a database goes through
+// initDatabase. It returns non-zero when the command must not run. The
+// silo is only ever read.
 //
 // A dry run prints the locations and the decision, runs the migration as
 // a dry-run, and writes nothing.
@@ -84,12 +85,15 @@ func openStorage(ctx context.Context, root, silo string, env flow.Env, streams f
 	}
 
 	switch {
+	case dry && (found || !data || task == ""):
+		return 0
 	case found || !data:
-		return 0
-	case task == "" && dry:
-		return 0
+		return initDatabase(ctx, silo, data, env, streams)
 	case task == "":
-		return askWithoutTask(streams)
+		if code := askWithoutTask(streams); code != 0 {
+			return code
+		}
+		return initDatabase(ctx, silo, data, env, streams)
 	case dry:
 		return migrate(ctx, task, silo, env, streams, []string{"migrate", "taskwarrior", "--dry-run"})
 	}
@@ -98,6 +102,31 @@ func openStorage(ctx context.Context, root, silo string, env flow.Env, streams f
 	report := flow.Streams{Stdin: streams.Stdin, Stdout: streams.Stderr, Stderr: streams.Stderr}
 	fmt.Fprintf(streams.Stderr, "🔄 jacazul flow: migrating %s into %s\n", silo, env.DatabasePath)
 	return migrate(ctx, task, silo, env, report, []string{"migrate", "taskwarrior", "--apply"})
+}
+
+// initDatabase creates the project database or brings its schema up to
+// date with flow.Init, and says which on stderr; a current database is
+// opened in silence. While a Taskwarrior silo still sits next to a
+// database that did not come from migrating it, every run warns, so the
+// operator moves the silo out once it is no longer needed. Init's errors
+// carry their own ACTION: and are printed as they are.
+func initDatabase(ctx context.Context, silo string, data bool, env flow.Env, streams flow.Streams) int {
+	result, err := flow.Init(ctx, env)
+	if err != nil {
+		fmt.Fprintln(streams.Stderr, err)
+		return 1
+	}
+	switch {
+	case result.Created:
+		fmt.Fprintf(streams.Stderr, "🐊 jacazul flow: created the project database at %s (schema v%d)\n", result.Path, result.To)
+	case result.Upgraded:
+		fmt.Fprintf(streams.Stderr, "🐊 jacazul flow: upgraded the project database at %s from schema v%d to v%d\n", result.Path, result.From, result.To)
+	}
+	if data && (result.Origin == nil || result.Origin.Path != canonical(silo)) {
+		fmt.Fprintf(streams.Stderr, "⚠️  jacazul flow: the Taskwarrior data at %s is still in place, and %s did not come from migrating it\n", silo, result.Path)
+		fmt.Fprintf(streams.Stderr, "ACTION: The flow database is the one in use. Once you no longer need the Taskwarrior data, move %s out of the way.\n", silo)
+	}
+	return 0
 }
 
 // explicitMigration reports whether args ask the engine to migrate
@@ -213,6 +242,19 @@ func migrate(ctx context.Context, task, silo string, env flow.Env, streams flow.
 		}
 	}
 	return code
+}
+
+// canonical is path made absolute with its symbolic links resolved, the one
+// form the launcher records as a migration origin and compares with.
+func canonical(path string) string {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved
+	}
+	return abs
 }
 
 func either(ok bool, yes, no string) string {
