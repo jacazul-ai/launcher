@@ -45,7 +45,7 @@ You see:
    database  /home/<you>/.jacazul/projects/<PROJECT_ID>/flow.sqlite3 (missing)
    silo      /home/<you>/.jacazul-ai/.task/<PROJECT_ID> (Taskwarrior data)
    task      /usr/bin/task
-   action    migrate a copy of the silo
+   action    ask: migrate a copy of the silo, or start with an empty flow database
 WARNING: task <uuid>: ...
 🐊 jacazul flow (dry): would migrate /home/<you>/.jacazul-ai/.task/<PROJECT_ID> (created ..., dependencies ..., annotations ..., tags ..., issues ...); nothing is written
 ```
@@ -55,7 +55,7 @@ WARNING: task <uuid>: ...
 | `database` | it sits under `~/.jacazul/projects/<PROJECT_ID>/`, unless you set `JACAZUL_FLOW_DATABASE_PATH` |
 | `silo` | it is the project's directory under `~/.jacazul-ai/.task/` and says `Taskwarrior data` |
 | `task` | it is the real binary, never `.../scripts/task` (the Jacazul guard) |
-| `action` | `migrate a copy of the silo` for a project not migrated yet, `use the flow database` after |
+| `action` | `ask: migrate a copy of the silo, ...` for a project not migrated yet, `use the flow database` after |
 | report | `nothing is written`; `WARNING` lines are records the engine kept in another form; `ERROR` lines name tasks to check after the migration, which still runs |
 
 ## 4. Prove nothing was written
@@ -81,8 +81,9 @@ HOME="$S/home" JACAZUL_HOME= TASKDATA= \
   /tmp/jacazul --home "$S/legacy" --project <PROJECT_ID> flow status
 ```
 
-`🔄 jacazul flow: migrating ...`, the issues and `🐊 jacazul flow: migrated
-...` go to stderr, then `status` runs on the new database in
+It shouts `OLD TASKWARRIOR DATA FOUND` and asks `Migrate now? [y/n]`;
+answer `y`. `🔄 jacazul flow: migrating ...`, the issues and `🐊 jacazul
+flow: migrated ...` go to stderr, then `status` runs on the new database in
 `$S/home/.jacazul/projects/`. Run the same command again: it must neither
 migrate a second time nor warn about the Taskwarrior data, because the
 database records that it came from that silo. Add `--verbose` before

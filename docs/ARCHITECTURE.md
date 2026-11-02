@@ -209,16 +209,35 @@ export failed, or the export is not valid JSON.
 `jacazul` knows both locations: the Taskwarrior silo
 (`$JACAZUL_HOME/.task/<PROJECT_ID>`, holding `taskchampion.sqlite3` or
 `pending.data`) and the flow database (see "Runtime paths and
-environment"). Before any `jacazul flow` command but `migrate` it checks
-them; the same check before a launch waits until `tw-flow` and `taskp`
-stop writing to migrated silos.
+environment"). It opens them, through the API only, before any `jacazul
+flow` command but `migrate` and before `jacazul <harness>` starts the
+harness, so the harness always opens with a flow database. Until the
+cutover (#134), `tw-flow` and `taskp` inside the session still write to
+the silo, not to the database.
 
-| Flow database | Taskwarrior silo | `task` binary | What `jacazul` does |
-|---|---|---|---|
-| exists | any | any | Opens it with `flow.Init`, which upgrades its schema when needed. |
-| missing | exists | found | Migrates a copy of the silo with `flow.MigrateTaskwarrior` (a dry-run, then the apply), then runs the command. |
-| missing | exists | missing | Asks: install Taskwarrior, or proceed without the migration. |
-| missing | missing | any | Creates a new flow database with `flow.Init`. |
+| Flow database | Taskwarrior silo | What `jacazul` does |
+|---|---|---|
+| exists | any | Opens it with `flow.Init`, which upgrades its schema when needed. |
+| missing | exists | Shouts that the old data is there and asks `Migrate now? [y/n]` (below). |
+| missing | missing | Creates a new flow database with `flow.Init`. |
+
+The question, on stderr:
+
+```text
+🚨 OLD TASKWARRIOR DATA FOUND
+   old  <silo>
+   new  <database> (missing)
+   Migrating copies the old data into the new database; the old data is only read.
+Migrate now? [y/n]:
+```
+
+| Answer | What happens |
+|---|---|
+| `y` with `task` found | Migrates a copy of the silo with `flow.MigrateTaskwarrior` (a dry-run, then the apply), then runs the command or the harness. |
+| `y` without `task` | Stops with `ACTION:` to install Taskwarrior; nothing is created. |
+| `n` | Shouts `YOU CHOSE NOT TO MIGRATE: THE NEW DATABASE WILL BE EMPTY`, creates the empty database with `flow.Init`, and goes on. |
+| anything else | Stops with `ACTION:`; nothing is created. |
+| no terminal | Stops with `ACTION:`; nothing is created and the harness does not start. |
 
 `jacazul` creates and upgrades the database itself, through `flow.Init`,
 and says so on stderr, so a database never appears without a word:
@@ -234,22 +253,20 @@ carry their own `ACTION:` and are printed as they are.
 
 **The silo is never written, moved, or deleted; the operator removes it.**
 While it stays in place next to a flow database that did not come from
-migrating it, every run warns on stderr and goes on:
+migrating it (after `n`, for one), every run and every harness launch
+shouts on stderr and goes on:
 
 ```text
-⚠️  jacazul flow: the Taskwarrior data at <silo> is still in place, and <database> did not come from migrating it
-ACTION: The flow database is the one in use. Once you no longer need the Taskwarrior data, move <silo> out of the way.
+🚨 jacazul: the old Taskwarrior data at <silo> is still in place, and <database> did not come from migrating it
+🚨 The old data is NOT in <database>; the flow database is the one in use.
+ACTION: Once you no longer need the old data, move <silo> out of the way; this shows on every run until then.
 ```
+
+A database migrated from the silo opens in silence.
 
 "Came from migrating it" is the origin the migration records in the
 database (`InitResult.Origin`), compared with the silo's canonical path
 (absolute, symbolic links resolved).
-
-Proceeding without the migration creates a new, empty flow database and
-leaves the Taskwarrior silo untouched; both stay, so the warning above
-shows on every run until the silo moves out. The prompt states the
-consequence before the choice: the engine refuses to migrate onto an
-existing database.
 
 `jacazul flow init` is this opening and nothing more: it creates or
 upgrades the database, warns about the silo, and runs no engine command.
@@ -283,11 +300,8 @@ The rarer paths:
   each line says, and an `ACTION:` sends the agent to the tasks named.
 - Any other failed migration stops with the engine's `ACTION:` and leaves
   no flow database, so the next run can try again.
-- Choosing to install prints the system's install command and exits; the
-  next run finds `task` and migrates. Any answer but proceed counts as
-  install.
-- A call without a terminal (an agent through its harness) that reaches the
-  prompt stops with `ACTION:` instead of waiting for an answer.
+- An agent's call has no terminal, so in an unmigrated project it stops
+  with `ACTION:`: the operator answers the question in a terminal.
 - The migration report goes to stderr, so the output of the command that
   triggered it stays clean.
 - `info`, `help`, and `--help` or `--version` before the command open no
@@ -302,6 +316,8 @@ The rarer paths:
   silo, the `task` binary and the decision, runs the migration as a
   dry-run, and runs no command: nothing is written, whatever the command
   asks. The procedure is [`flow-smoke-check.md`](flow-smoke-check.md).
+  `jacazul --dry <harness>` keeps the Bash launcher's output and does not
+  open storage; `jacazul --dry flow status` shows what opening would do.
 
 ### Names
 
