@@ -674,3 +674,26 @@ func TestRefusedFlagsCoverTheEngineHelp(t *testing.T) {
 		t.Fatalf("no value-taking option read from the engine help:\n%s", options)
 	}
 }
+
+// --verbose shows what opening found and decided on a real run, on stderr
+// so the command's output stays clean, and makes the engine verbose too.
+func TestVerboseShowsTheOpeningDecision(t *testing.T) {
+	o := openProject(t, 0)
+	o.withDatabase(t, "")
+
+	code, stdout, stderr := run(t, "--verbose", "flow", "status")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	for _, want := range []string{o.database, o.silo, "use the flow database", "is current"} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("stderr lacks %q:\n%s", want, stderr)
+		}
+	}
+	if stdout != "" {
+		t.Errorf("stdout %q, want it left to the command", stdout)
+	}
+	if want := [][]string{{"-v", "status"}}; !slices.EqualFunc(*o.calls, want, slices.Equal) {
+		t.Errorf("engine calls %q, want %q", *o.calls, want)
+	}
+}

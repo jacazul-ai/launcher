@@ -21,6 +21,7 @@ type Options struct {
 	Version bool   `short:"v" long:"version" description:"Print the launcher version and exit"`
 	Dry     bool   `long:"dry" description:"Run every bootstrap step but do not start the harness (also DRY)"`
 	Debug   bool   `long:"debug" description:"Print what each bootstrap step verifies (also DEBUG)"`
+	Verbose bool   `long:"verbose" description:"Show what opening a flow project found and decided, and make the engine verbose"`
 	Project string `long:"project" value-name:"ID" description:"Pin the project ID instead of resolving it from the working directory (also JACAZUL_PROJECT)"`
 	Home    string `long:"home" value-name:"DIR" description:"Jacazul home directory (also JACAZUL_HOME; default ~/.jacazul-ai)"`
 	Session string `long:"session" value-name:"ID" description:"Jacazul session ID (also JACAZUL_SESSION; default global)"`

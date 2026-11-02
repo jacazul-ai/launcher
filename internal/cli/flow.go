@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -101,7 +102,10 @@ func engine(opts Options, args []string, stdout, stderr io.Writer) int {
 	silo := filepath.Join(environment.Home(opts.Home, os.Getenv), ".task", id.ID)
 	// A dry run only shows what opening would do, whatever the command.
 	if opts.Dry || os.Getenv("DRY") != "" {
-		return openStorage(ctx, root, silo, env, streams, true)
+		return openStorage(ctx, root, silo, env, streams, true, opts.Verbose)
+	}
+	if opts.Verbose && !slices.Contains(args, "-v") && !slices.Contains(args, "--verbose") {
+		args = append([]string{"-v"}, args...)
 	}
 	if explicitMigration(args) && hasTaskwarrior(silo) {
 		task := findTask(root)
@@ -113,7 +117,7 @@ func engine(opts Options, args []string, stdout, stderr io.Writer) int {
 		return migrate(ctx, task, silo, env, streams, args)
 	}
 	if name, _ := command(args); opensStorage(args) && name != "migrate" {
-		if code := openStorage(ctx, root, silo, env, streams, false); code != 0 || name == "init" {
+		if code := openStorage(ctx, root, silo, env, streams, false, opts.Verbose); code != 0 || name == "init" {
 			return code
 		}
 	}

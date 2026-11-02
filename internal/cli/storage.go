@@ -78,8 +78,9 @@ func opensStorage(args []string) bool {
 // silo is only ever read.
 //
 // A dry run prints the locations and the decision, runs the migration as
-// a dry-run, and writes nothing.
-func openStorage(ctx context.Context, root, silo string, env flow.Env, streams flow.Streams, dry bool) int {
+// a dry-run, and writes nothing. Verbose prints the same report on a real
+// run, on stderr, and says when the database is current.
+func openStorage(ctx context.Context, root, silo string, env flow.Env, streams flow.Streams, dry, verbose bool) int {
 	found := exists(env.DatabasePath)
 	data := hasTaskwarrior(silo)
 	task := ""
@@ -95,26 +96,30 @@ func openStorage(ctx context.Context, root, silo string, env flow.Env, streams f
 	case data:
 		action = "migrate a copy of the silo"
 	}
-	if dry {
-		fmt.Fprintln(streams.Stdout, "🐊 jacazul flow (dry): nothing is written")
-		fmt.Fprintf(streams.Stdout, "   database  %s (%s)\n", env.DatabasePath, either(found, "exists", "missing"))
-		fmt.Fprintf(streams.Stdout, "   silo      %s (%s)\n", silo, either(data, "Taskwarrior data", "no Taskwarrior data"))
-		if !found && data {
-			fmt.Fprintf(streams.Stdout, "   task      %s\n", cmp.Or(task, "not found"))
+	if dry || verbose {
+		w, header := streams.Stderr, "🐊 jacazul flow: opening the project"
+		if dry {
+			w, header = streams.Stdout, "🐊 jacazul flow (dry): nothing is written"
 		}
-		fmt.Fprintf(streams.Stdout, "   action    %s\n", action)
+		fmt.Fprintln(w, header)
+		fmt.Fprintf(w, "   database  %s (%s)\n", env.DatabasePath, either(found, "exists", "missing"))
+		fmt.Fprintf(w, "   silo      %s (%s)\n", silo, either(data, "Taskwarrior data", "no Taskwarrior data"))
+		if !found && data {
+			fmt.Fprintf(w, "   task      %s\n", cmp.Or(task, "not found"))
+		}
+		fmt.Fprintf(w, "   action    %s\n", action)
 	}
 
 	switch {
 	case dry && (found || !data || task == ""):
 		return 0
 	case found || !data:
-		return initDatabase(ctx, silo, data, env, streams)
+		return initDatabase(ctx, silo, data, env, streams, verbose)
 	case task == "":
 		if code := askWithoutTask(streams); code != 0 {
 			return code
 		}
-		return initDatabase(ctx, silo, data, env, streams)
+		return initDatabase(ctx, silo, data, env, streams, verbose)
 	case dry:
 		return migrate(ctx, task, silo, env, streams, []string{"migrate", "taskwarrior", "--dry-run"})
 	}
@@ -127,11 +132,11 @@ func openStorage(ctx context.Context, root, silo string, env flow.Env, streams f
 
 // initDatabase creates the project database or brings its schema up to
 // date with flow.Init, and says which on stderr; a current database is
-// opened in silence. While a Taskwarrior silo still sits next to a
-// database that did not come from migrating it, every run warns, so the
-// operator moves the silo out once it is no longer needed. Init's errors
-// carry their own ACTION: and are printed as they are.
-func initDatabase(ctx context.Context, silo string, data bool, env flow.Env, streams flow.Streams) int {
+// opened in silence unless verbose. While a Taskwarrior silo still sits
+// next to a database that did not come from migrating it, every run warns,
+// so the operator moves the silo out once it is no longer needed. Init's
+// errors carry their own ACTION: and are printed as they are.
+func initDatabase(ctx context.Context, silo string, data bool, env flow.Env, streams flow.Streams, verbose bool) int {
 	result, err := flow.Init(ctx, env)
 	if err != nil {
 		fmt.Fprintln(streams.Stderr, err)
@@ -142,6 +147,8 @@ func initDatabase(ctx context.Context, silo string, data bool, env flow.Env, str
 		fmt.Fprintf(streams.Stderr, "🐊 jacazul flow: created the project database at %s (schema v%d)\n", result.Path, result.To)
 	case result.Upgraded:
 		fmt.Fprintf(streams.Stderr, "🐊 jacazul flow: upgraded the project database at %s from schema v%d to v%d\n", result.Path, result.From, result.To)
+	case verbose:
+		fmt.Fprintf(streams.Stderr, "🐊 jacazul flow: the project database at %s is current (schema v%d)\n", result.Path, result.To)
 	}
 	if data && (result.Origin == nil || result.Origin.Path != canonical(silo)) {
 		fmt.Fprintf(streams.Stderr, "⚠️  jacazul flow: the Taskwarrior data at %s is still in place, and %s did not come from migrating it\n", silo, result.Path)
