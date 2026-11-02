@@ -573,3 +573,104 @@ func TestOpeningFailedMigrationLeavesNoDatabase(t *testing.T) {
 	}
 	o.siloUntouched(t)
 }
+
+// The engine flags that take a value would make the engine open another
+// database than the one opening settled, so jacazul refuses them, in both
+// spellings and wherever they sit before "--", and names what to use.
+func TestFlowRefusesEngineValueFlags(t *testing.T) {
+	for _, flag := range []string{"--project", "--session", "--home", "--database-path", "--taskdata", "--task-binary"} {
+		for _, args := range [][]string{
+			{"flow", flag, "x", "status"},
+			{"flow", flag + "=x", "status"},
+			{"flow", "-v", "status", flag, "x"},
+		} {
+			t.Run(strings.Join(args, " "), func(t *testing.T) {
+				o := openProject(t, 0)
+				o.withSilo(t)
+				record := fakeTask(t, `echo '[]'`)
+
+				code, _, stderr := run(t, args...)
+				if code != 1 || !strings.Contains(stderr, flag) || !strings.Contains(stderr, "ACTION:") {
+					t.Fatalf("exit %d, stderr %q, want a refusal of %s with an ACTION:", code, stderr, flag)
+				}
+				if len(*o.calls) != 0 {
+					t.Errorf("engine ran: %q", *o.calls)
+				}
+				if _, err := os.Stat(record); !os.IsNotExist(err) {
+					t.Error("task ran for a refused command")
+				}
+				if exists(o.database) {
+					t.Error("database created for a refused command")
+				}
+				o.siloUntouched(t)
+			})
+		}
+	}
+}
+
+// After "--" the arguments belong to the command, not to the engine.
+func TestFlowPassesValueFlagsAfterTheSeparator(t *testing.T) {
+	o := openProject(t, 0)
+
+	if code, _, stderr := run(t, "flow", "note", "--", "--project", "x"); code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	if want := [][]string{{"note", "--", "--project", "x"}}; !slices.EqualFunc(*o.calls, want, slices.Equal) {
+		t.Errorf("engine calls %q, want %q", *o.calls, want)
+	}
+}
+
+// The command is the first argument that is not a flag, so a leading
+// engine flag neither hides a command that opens storage nor turns one
+// that does not into a migration.
+func TestFlowFindsTheCommandPastLeadingFlags(t *testing.T) {
+	for _, tc := range []struct {
+		args  []string
+		opens bool
+	}{
+		{[]string{"-v", "info"}, false},
+		{[]string{"--verbose", "help"}, false},
+		{[]string{"-V"}, false},
+		{[]string{"-v", "--help"}, false},
+		{[]string{"-v", "status"}, true},
+		{[]string{"--verbose", "init"}, true},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			o := openProject(t, 0)
+			noTask(t)
+
+			code, _, stderr := run(t, append([]string{"flow"}, tc.args...)...)
+			if code != 0 {
+				t.Fatalf("exit %d, stderr %q", code, stderr)
+			}
+			if exists(o.database) != tc.opens {
+				t.Errorf("database exists %v, want %v", exists(o.database), tc.opens)
+			}
+		})
+	}
+}
+
+// Every engine global option that takes a value must be one jacazul
+// refuses; a new one in the pinned engine fails here until it is added.
+func TestRefusedFlagsCoverTheEngineHelp(t *testing.T) {
+	var stdout strings.Builder
+	flow.Run(context.Background(), []string{"--help"}, flow.Env{}, flow.Streams{Stdout: &stdout, Stderr: &stdout})
+	_, options, ok := strings.Cut(stdout.String(), "GLOBAL OPTIONS")
+	if !ok {
+		t.Fatalf("engine help has no GLOBAL OPTIONS:\n%s", stdout.String())
+	}
+	found := 0
+	for _, field := range strings.Fields(options) {
+		name, _, takesValue := strings.Cut(field, "=")
+		if !takesValue || !strings.HasPrefix(name, "--") {
+			continue
+		}
+		found++
+		if _, ok := engineValueFlags[name]; !ok {
+			t.Errorf("engine global option %s takes a value but jacazul does not refuse it", name)
+		}
+	}
+	if found == 0 {
+		t.Fatalf("no value-taking option read from the engine help:\n%s", options)
+	}
+}

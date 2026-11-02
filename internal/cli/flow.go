@@ -23,6 +23,33 @@ type flowRunner func(context.Context, []string, flow.Env, flow.Streams) int
 // runEngine is the embedded engine; tests replace it.
 var runEngine flowRunner = flow.Run
 
+// engineValueFlags are the engine's global options that take a value,
+// with what to use instead. Each one would point the engine at another
+// project, session or database than the one opening settled.
+var engineValueFlags = map[string]string{
+	"--project":       "Pass it to jacazul instead: jacazul --project <ID> flow ...",
+	"--session":       "Pass it to jacazul instead: jacazul --session <ID> flow ...",
+	"--home":          "jacazul keeps the flow database under ~/.jacazul; set JACAZUL_FLOW_DATABASE_PATH to use another one.",
+	"--database-path": "Set JACAZUL_FLOW_DATABASE_PATH instead.",
+	"--taskdata":      "jacazul reads the project's Taskwarrior data itself; pass jacazul --home <DIR> to read another Jacazul home.",
+	"--task-binary":   "jacazul finds task itself; set JACAZUL_REAL_TASK to use another binary.",
+}
+
+// refusedFlag is the first engine value flag in args before "--", in
+// either spelling, or "" when there is none.
+func refusedFlag(args []string) string {
+	for _, arg := range args {
+		if arg == "--" {
+			break
+		}
+		name, _, _ := strings.Cut(arg, "=")
+		if _, ok := engineValueFlags[name]; ok {
+			return name
+		}
+	}
+	return ""
+}
+
 // runFlow answers session list natively, from the Taskwarrior lanes, and
 // runs every other command in the embedded engine.
 func runFlow(opts Options, args []string, stdout, stderr io.Writer) int {
@@ -42,6 +69,11 @@ func runFlow(opts Options, args []string, stdout, stderr io.Writer) int {
 // JACAZUL_HOME still name the legacy runtime home, whose .task silo is
 // only read.
 func engine(opts Options, args []string, stdout, stderr io.Writer) int {
+	if flag := refusedFlag(args); flag != "" {
+		fmt.Fprintf(stderr, "❌ jacazul flow: %s is set by jacazul, so the command uses the database opening settled\n", flag)
+		fmt.Fprintf(stderr, "ACTION: %s\n", engineValueFlags[flag])
+		return 1
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(stderr, "❌ jacazul flow: %v\n", err)
@@ -80,8 +112,8 @@ func engine(opts Options, args []string, stdout, stderr io.Writer) int {
 		}
 		return migrate(ctx, task, silo, env, streams, args)
 	}
-	if opensStorage(args) && args[0] != "migrate" {
-		if code := openStorage(ctx, root, silo, env, streams, false); code != 0 || args[0] == "init" {
+	if name, _ := command(args); opensStorage(args) && name != "migrate" {
+		if code := openStorage(ctx, root, silo, env, streams, false); code != 0 || name == "init" {
 			return code
 		}
 	}

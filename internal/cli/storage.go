@@ -43,10 +43,31 @@ var findTask = func(root string) string {
 	}).RealTask
 }
 
+// command is the engine command in args and its index: the first argument
+// that is not a flag, before any "--". With the engine's value flags
+// refused, every flag before it stands alone. It is "", -1 for none.
+func command(args []string) (string, int) {
+	for i, arg := range args {
+		if arg == "--" {
+			break
+		}
+		if !strings.HasPrefix(arg, "-") {
+			return arg, i
+		}
+	}
+	return "", -1
+}
+
 // opensStorage reports whether the engine command opens the project's
 // storage; help, version and info do not, so they trigger no migration.
 func opensStorage(args []string) bool {
-	return len(args) > 0 && !slices.Contains([]string{"info", "help", "--help", "-h", "--version"}, args[0])
+	name, i := command(args)
+	if i < 0 || slices.Contains([]string{"info", "help"}, name) {
+		return false
+	}
+	return !slices.ContainsFunc(args[:i], func(arg string) bool {
+		return slices.Contains([]string{"--help", "-h", "--version", "-V"}, arg)
+	})
 }
 
 // openStorage settles the project's storage before an engine command, as
@@ -133,10 +154,11 @@ func initDatabase(ctx context.Context, silo string, data bool, env flow.Env, str
 // Taskwarrior data that jacazul must export first: no --source snapshot
 // and no --issues listing.
 func explicitMigration(args []string) bool {
-	if len(args) < 2 || args[0] != "migrate" || args[1] != "taskwarrior" {
+	name, i := command(args)
+	if name != "migrate" || i+1 >= len(args) || args[i+1] != "taskwarrior" {
 		return false
 	}
-	for _, arg := range args[2:] {
+	for _, arg := range args[i+2:] {
 		if arg == "--issues" || arg == "--source" || strings.HasPrefix(arg, "--source=") {
 			return false
 		}
