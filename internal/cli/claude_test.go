@@ -376,3 +376,55 @@ func TestClaudeKeepsTheLegacySessionFlag(t *testing.T) {
 		t.Errorf("help lists the legacy flag:\n%s", stdout)
 	}
 }
+
+// The harness always opens with a flow database: opening runs before it,
+// and with the Taskwarrior silo in place and no database it asks first.
+// Yes migrates, no shouts and starts empty, and nobody at a terminal stops
+// before the harness opens.
+func TestClaudeOpensStorageBeforeTheHarness(t *testing.T) {
+	for name, tc := range map[string]struct {
+		silo     bool
+		answer   string // "" for no terminal
+		code     int
+		harness  bool
+		database bool
+		output   string
+	}{
+		"no silo":     {code: 0, harness: true, database: true, output: "created the project database"},
+		"yes":         {silo: true, answer: "y\n", code: 0, harness: true, database: true, output: "migrated"},
+		"no":          {silo: true, answer: "n\n", code: 0, harness: true, database: true, output: "EMPTY"},
+		"no terminal": {silo: true, code: 1, output: "ACTION:"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			l := setup(t)
+			id := filepath.Base(filepath.Dir(l.project)) + "_" + filepath.Base(l.project)
+			database := filepath.Join(l.home, ".jacazul", "projects", id, "flow.sqlite3")
+			fakeTask(t, `echo '[]'`)
+			interactive = func() bool { return false }
+			t.Cleanup(func() { interactive = func() bool { return isTerminal(os.Stdin) } })
+			if tc.silo {
+				silo := filepath.Join(l.home, ".jacazul-ai", ".task", id)
+				if err := os.MkdirAll(silo, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(silo, "taskchampion.sqlite3"), []byte("original"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.answer != "" {
+				answer(t, tc.answer)
+			}
+
+			code, _, stderr := run(t, "claude")
+			if code != tc.code || !strings.Contains(stderr, tc.output) {
+				t.Fatalf("exit %d, want %d; stderr %q lacks %q", code, tc.code, stderr, tc.output)
+			}
+			if _, err := os.Stat(l.marker); (err == nil) != tc.harness {
+				t.Errorf("harness ran %v, want %v", err == nil, tc.harness)
+			}
+			if exists(database) != tc.database {
+				t.Errorf("database exists %v, want %v", exists(database), tc.database)
+			}
+		})
+	}
+}

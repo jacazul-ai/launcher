@@ -93,9 +93,9 @@ func openStorage(ctx context.Context, root, silo string, env flow.Env, streams f
 	case found:
 		action = "use the flow database"
 	case data && task == "":
-		action = "ask: install Taskwarrior, or proceed with a new flow database"
+		action = "ask: migrate (needs Taskwarrior, not found), or start with an empty flow database"
 	case data:
-		action = "migrate a copy of the silo"
+		action = "ask: migrate a copy of the silo, or start with an empty flow database"
 	}
 	if dry || verbose {
 		w, header := streams.Stderr, "🐊 jacazul flow: opening the project"
@@ -116,18 +116,27 @@ func openStorage(ctx context.Context, root, silo string, env flow.Env, streams f
 		return 0
 	case found || !data:
 		return initDatabase(ctx, silo, data, env, streams, verbose)
-	case task == "":
-		if code := askWithoutTask(streams); code != 0 {
-			return code
-		}
-		return initDatabase(ctx, silo, data, env, streams, verbose)
 	case dry:
 		return migrate(ctx, task, silo, env, streams.Stdout, streams.Stderr, false)
 	}
-	// The migration report goes to stderr, so the output of the command
-	// that triggered it stays clean for whoever reads it.
-	fmt.Fprintf(streams.Stderr, "🔄 jacazul flow: migrating %s into %s\n", silo, env.DatabasePath)
-	return migrate(ctx, task, silo, env, streams.Stderr, streams.Stderr, true)
+
+	switch askToMigrate(silo, env.DatabasePath, streams.Stderr) {
+	case answerNo:
+		fmt.Fprintln(streams.Stderr, "🚨🚨🚨 YOU CHOSE NOT TO MIGRATE: THE NEW DATABASE WILL BE EMPTY.")
+		fmt.Fprintf(streams.Stderr, "🚨 The old Taskwarrior data stays at %s and is NOT in %s.\n", silo, env.DatabasePath)
+		return initDatabase(ctx, silo, data, env, streams, verbose)
+	case answerYes:
+		if task == "" {
+			fmt.Fprintln(streams.Stderr, "❌ jacazul: no task binary was found to export the old Taskwarrior data")
+			fmt.Fprintf(streams.Stderr, "ACTION: Install Taskwarrior (%s) and run jacazul again; nothing was created.\n", installHint(runtime.GOOS))
+			return 1
+		}
+		// The migration report goes to stderr, so the output of the command
+		// that triggered it stays clean for whoever reads it.
+		fmt.Fprintf(streams.Stderr, "🔄 jacazul flow: migrating %s into %s\n", silo, env.DatabasePath)
+		return migrate(ctx, task, silo, env, streams.Stderr, streams.Stderr, true)
+	}
+	return 1
 }
 
 // initDatabase creates the project database or brings its schema up to
@@ -151,8 +160,9 @@ func initDatabase(ctx context.Context, silo string, data bool, env flow.Env, str
 		fmt.Fprintf(streams.Stderr, "🐊 jacazul flow: the project database at %s is current (schema v%d)\n", result.Path, result.To)
 	}
 	if data && (result.Origin == nil || result.Origin.Path != canonical(silo)) {
-		fmt.Fprintf(streams.Stderr, "⚠️  jacazul flow: the Taskwarrior data at %s is still in place, and %s did not come from migrating it\n", silo, result.Path)
-		fmt.Fprintf(streams.Stderr, "ACTION: The flow database is the one in use. Once you no longer need the Taskwarrior data, move %s out of the way.\n", silo)
+		fmt.Fprintf(streams.Stderr, "🚨 jacazul: the old Taskwarrior data at %s is still in place, and %s did not come from migrating it\n", silo, result.Path)
+		fmt.Fprintf(streams.Stderr, "🚨 The old data is NOT in %s; the flow database is the one in use.\n", result.Path)
+		fmt.Fprintf(streams.Stderr, "ACTION: Once you no longer need the old data, move %s out of the way; this shows on every run until then.\n", silo)
 	}
 	return 0
 }
@@ -198,27 +208,37 @@ func hasTaskwarrior(dir string) bool {
 	return exists(filepath.Join(dir, "taskchampion.sqlite3")) || exists(filepath.Join(dir, "pending.data"))
 }
 
-// askWithoutTask asks whether to install Taskwarrior or start without the
-// migration, and returns 0 only for the second. Without a terminal nobody
-// can answer, so it stops instead of choosing.
-func askWithoutTask(streams flow.Streams) int {
+// The operator's answers to whether the silo is migrated.
+const (
+	answerNone = iota // nobody answered, or not with yes or no
+	answerYes
+	answerNo
+)
+
+// askToMigrate shouts that the old Taskwarrior data is there and asks, on
+// stderr, whether to migrate it into the new database. Without a terminal
+// nobody can answer, so it stops instead of choosing.
+func askToMigrate(silo, database string, stderr io.Writer) int {
+	fmt.Fprintln(stderr, "🚨 OLD TASKWARRIOR DATA FOUND")
+	fmt.Fprintf(stderr, "   old  %s\n", silo)
+	fmt.Fprintf(stderr, "   new  %s (missing)\n", database)
+	fmt.Fprintln(stderr, "   Migrating copies the old data into the new database; the old data is only read.")
 	if !interactive() {
-		fmt.Fprintln(streams.Stderr, "❌ jacazul flow: this project has Taskwarrior data to migrate, but no task binary was found")
-		fmt.Fprintln(streams.Stderr, "ACTION: Install Taskwarrior, or run jacazul flow in a terminal to choose to start without the migration.")
-		return 1
+		fmt.Fprintln(stderr, "❌ jacazul: nobody at a terminal to answer whether to migrate")
+		fmt.Fprintln(stderr, "ACTION: Run jacazul in a terminal and answer the question; nothing was created.")
+		return answerNone
 	}
-	fmt.Fprintln(streams.Stdout, "This project has Taskwarrior data to migrate, but no task binary was found.")
-	fmt.Fprintln(streams.Stdout, "  [i] install Taskwarrior; the next run migrates")
-	fmt.Fprintln(streams.Stdout, "  [p] proceed without the migration: a new, empty flow database; the")
-	fmt.Fprintln(streams.Stdout, "      Taskwarrior data stays where it is, and migrating it later needs a")
-	fmt.Fprintln(streams.Stdout, "      clean flow database")
-	fmt.Fprint(streams.Stdout, "Choice [i/p]: ")
-	answer, _ := bufio.NewReader(input).ReadString('\n')
-	if choice := strings.ToLower(strings.TrimSpace(answer)); choice == "p" || choice == "proceed" {
-		return 0
+	fmt.Fprint(stderr, "Migrate now? [y/n]: ")
+	reply, _ := bufio.NewReader(input).ReadString('\n')
+	switch strings.ToLower(strings.TrimSpace(reply)) {
+	case "y", "yes", "s", "sim":
+		return answerYes
+	case "n", "no", "não", "nao":
+		return answerNo
 	}
-	fmt.Fprintf(streams.Stderr, "ℹ Install Taskwarrior, then run jacazul flow again: %s\n", installHint(runtime.GOOS))
-	return 1
+	fmt.Fprintln(stderr, "❌ jacazul: the answer was neither yes nor no")
+	fmt.Fprintln(stderr, "ACTION: Run jacazul again and answer y or n; nothing was created.")
+	return answerNone
 }
 
 func installHint(goos string) string {

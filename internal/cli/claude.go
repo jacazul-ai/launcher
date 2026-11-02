@@ -2,6 +2,7 @@ package cli
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jacazul-ai/flow"
 	"github.com/jacazul-ai/launcher/internal/bootstrap/claude"
 	"github.com/jacazul-ai/launcher/internal/bootstrap/environment"
 	"github.com/jacazul-ai/launcher/internal/bootstrap/language"
@@ -141,6 +143,20 @@ func runClaude(opts Options, args []string, stdout, stderr io.Writer) int {
 	if bin == "" {
 		fmt.Fprintln(stderr, "❌ claude command not found in PATH or ~/.local/bin/.")
 		return 1
+	}
+
+	// The harness always opens with a flow database: opening settles it
+	// first, the same way jacazul flow does, and asks before it migrates
+	// the Taskwarrior silo. A dry run keeps the Bash launcher's output;
+	// jacazul --dry flow status shows what opening would do.
+	if !dry {
+		fenv, silo := flowEnv(opts, id.ID)
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		opened := openStorage(ctx, root, silo, fenv, flow.Streams{Stdin: os.Stdin, Stdout: stdout, Stderr: stderr}, false, opts.Verbose)
+		stop()
+		if opened != 0 {
+			return opened
+		}
 	}
 
 	if debug {

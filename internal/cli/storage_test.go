@@ -128,6 +128,15 @@ func fakeTask(t *testing.T, script string) string {
 	return record
 }
 
+// answer puts the operator at a terminal who types reply.
+func answer(t *testing.T, reply string) {
+	t.Helper()
+	interactive = func() bool { return true }
+	saved := input
+	input = strings.NewReader(reply)
+	t.Cleanup(func() { input = saved })
+}
+
 func noTask(t *testing.T) {
 	t.Helper()
 	saved := findTask
@@ -190,6 +199,7 @@ func TestOpeningUsesAnExistingDatabase(t *testing.T) {
 func TestOpeningMigratesACopyOfTheSilo(t *testing.T) {
 	o := openProject(t, nil)
 	o.withSilo(t)
+	answer(t, "y\n")
 	t.Setenv("TASKRC", filepath.Join(t.TempDir(), "operator.taskrc"))
 	record := fakeTask(t, `
 grep -q '^uda.backlog.type=numeric' "$TASKRC" || { echo "TASKRC $TASKRC lacks the Jacazul UDAs" >&2; exit 3; }
@@ -263,6 +273,7 @@ echo '[{"uuid":"8e1d2c4a-0000-4000-8000-000000000001","description":"Ship it","s
 func TestOpeningMigratesDespiteRecordErrors(t *testing.T) {
 	o := openProject(t, nil)
 	o.withSilo(t)
+	answer(t, "y\n")
 	fakeTask(t, `echo '[{"uuid":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","description":"Late","status":"pending","entry":"20261101T000000Z","due":"not-a-date"}]'`)
 
 	code, _, stderr := run(t, "flow", "status")
@@ -390,68 +401,109 @@ func TestFlowInitIsOpeningTheProject(t *testing.T) {
 	}
 }
 
-// Without task and without a terminal there is nobody to ask, so the
-// launcher stops instead of choosing for the operator.
-func TestOpeningWithoutTaskOrTerminalStops(t *testing.T) {
-	o := openProject(t, nil)
-	o.withSilo(t)
-	noTask(t)
+// Without a terminal there is nobody to answer whether to migrate, so the
+// launcher stops instead of choosing for the operator, task or not.
+func TestOpeningWithoutATerminalStops(t *testing.T) {
+	for name, withTask := range map[string]bool{"with task": true, "without task": false} {
+		t.Run(name, func(t *testing.T) {
+			o := openProject(t, nil)
+			o.withSilo(t)
+			if withTask {
+				fakeTask(t, `echo '[]'`)
+			} else {
+				noTask(t)
+			}
 
-	code, _, stderr := run(t, "flow", "status")
-	if code != 1 || !strings.Contains(stderr, "ACTION:") {
-		t.Fatalf("exit %d, stderr %q", code, stderr)
+			code, _, stderr := run(t, "flow", "status")
+			if code != 1 || !strings.Contains(stderr, "ACTION:") {
+				t.Fatalf("exit %d, stderr %q", code, stderr)
+			}
+			if len(*o.calls) != 0 || len(*o.migrations) != 0 {
+				t.Errorf("engine ran %q, migrations %+v", *o.calls, *o.migrations)
+			}
+			if exists(o.database) {
+				t.Error("database created without an answer")
+			}
+			o.siloUntouched(t)
+		})
 	}
-	if len(*o.calls) != 0 {
-		t.Errorf("engine ran: %q", *o.calls)
-	}
-	if _, err := os.Stat(o.database); !os.IsNotExist(err) {
-		t.Errorf("database created: %v", err)
-	}
-	o.siloUntouched(t)
 }
 
-func TestOpeningWithoutTaskAsksTheOperator(t *testing.T) {
+// With the silo in place and no database, opening shouts that the old data
+// is there and asks before migrating. Yes migrates, or stops without task;
+// no shouts that the new database will be empty and creates it; anything
+// else creates nothing.
+func TestOpeningAsksBeforeMigrating(t *testing.T) {
 	for name, tc := range map[string]struct {
-		answer string
-		code   int
-		calls  [][]string
-		output string
+		answer   string
+		withTask bool
+		code     int
+		database bool
+		migrated bool
+		output   string
 	}{
-		"proceed": {answer: "p\n", code: 0, calls: [][]string{{"status"}}},
-		"install": {answer: "i\n", code: 1, output: "install"},
+		"yes":              {answer: "y\n", withTask: true, code: 0, database: true, migrated: true, output: "migrated"},
+		"yes without task": {answer: "y\n", code: 1, output: "install"},
+		"no":               {answer: "n\n", withTask: true, code: 0, database: true, output: "EMPTY"},
+		"no without task":  {answer: "n\n", code: 0, database: true, output: "EMPTY"},
+		"anything else":    {answer: "maybe\n", withTask: true, code: 1, output: "ACTION:"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			o := openProject(t, nil)
 			o.withSilo(t)
-			noTask(t)
-			interactive = func() bool { return true }
-			saved := input
-			input = strings.NewReader(tc.answer)
-			t.Cleanup(func() { input = saved })
+			if tc.withTask {
+				fakeTask(t, `echo '[]'`)
+			} else {
+				noTask(t)
+			}
+			answer(t, tc.answer)
 
 			code, stdout, stderr := run(t, "flow", "status")
 			if code != tc.code {
 				t.Fatalf("exit %d, want %d; stderr %q", code, tc.code, stderr)
 			}
-			if !strings.Contains(stdout+stderr, "Taskwarrior") {
-				t.Errorf("prompt does not name Taskwarrior: %q", stdout+stderr)
+			if stdout != "" {
+				t.Errorf("stdout %q, want the question and the report on stderr", stdout)
 			}
-			if !strings.Contains(strings.ToLower(stdout+stderr), tc.output) {
-				t.Errorf("output %q lacks %q", stdout+stderr, tc.output)
+			for _, want := range []string{"OLD TASKWARRIOR DATA", o.silo, o.database, tc.output} {
+				if !strings.Contains(stderr, want) {
+					t.Errorf("stderr lacks %q:\n%s", want, stderr)
+				}
 			}
-			if !slices.EqualFunc(*o.calls, tc.calls, slices.Equal) {
-				t.Errorf("engine calls %q, want %q", *o.calls, tc.calls)
+			if exists(o.database) != tc.database {
+				t.Errorf("database exists %v, want %v", exists(o.database), tc.database)
 			}
-			// Proceeding is a fresh database, created and reported by
-			// opening; installing creates nothing.
-			if exists(o.database) != (tc.code == 0) {
-				t.Errorf("database exists %v after %q", exists(o.database), tc.answer)
-			}
-			if tc.code == 0 && !strings.Contains(stderr, "created the project database") {
-				t.Errorf("stderr %q does not report the new database", stderr)
+			if applied := slices.ContainsFunc(*o.migrations, func(m flow.MigrateOptions) bool { return m.Apply }); applied != tc.migrated {
+				t.Errorf("migration applied %v, want %v", applied, tc.migrated)
 			}
 			o.siloUntouched(t)
 		})
+	}
+}
+
+// After no, every run shouts that the old data is still in place and not
+// in the database, and asks nothing again.
+func TestOpeningKeepsShoutingAfterNo(t *testing.T) {
+	o := openProject(t, nil)
+	o.withSilo(t)
+	fakeTask(t, `echo '[]'`)
+	answer(t, "n\n")
+	if code, _, stderr := run(t, "flow", "status"); code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+
+	interactive = func() bool { return false }
+	for range 2 {
+		code, _, stderr := run(t, "flow", "status")
+		if code != 0 {
+			t.Fatalf("exit %d, stderr %q", code, stderr)
+		}
+		if !strings.Contains(stderr, "NOT in") || !strings.Contains(stderr, o.silo) || !strings.Contains(stderr, "ACTION:") {
+			t.Errorf("stderr %q, want the shout naming the silo with an ACTION:", stderr)
+		}
+		if strings.Contains(stderr, "Migrate now?") {
+			t.Errorf("asked again: %q", stderr)
+		}
 	}
 }
 
@@ -463,6 +515,7 @@ func TestOpeningStopsWhenTheExportFails(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			o := openProject(t, nil)
 			o.withSilo(t)
+			answer(t, "y\n")
 			fakeTask(t, script)
 
 			code, _, stderr := run(t, "flow", "status")
@@ -641,6 +694,7 @@ func TestOpeningSkipsCommandsWithoutStorage(t *testing.T) {
 func TestOpeningFailedMigrationLeavesNoDatabase(t *testing.T) {
 	o := openProject(t, errors.New("read export: disk on fire\nACTION: Fix the disk."))
 	o.withSilo(t)
+	answer(t, "y\n")
 	fakeTask(t, "echo '[]'")
 
 	code, _, stderr := run(t, "flow", "status")

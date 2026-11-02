@@ -64,15 +64,27 @@ func runFlow(opts Options, args []string, stdout, stderr io.Writer) int {
 	return engine(opts, args, stdout, stderr)
 }
 
+// flowEnv is the engine's context for project id and the project's
+// Taskwarrior silo, the same for jacazul flow and a harness launch. The
+// flow database lives under ~/.jacazul/projects; --home and JACAZUL_HOME
+// still name the legacy runtime home, whose .task silo is only read.
+func flowEnv(opts Options, id string) (flow.Env, string) {
+	home := filepath.Join(os.Getenv("HOME"), ".jacazul")
+	env := flow.Env{
+		ProjectID: id,
+		SessionID: environment.Session(cmp.Or(opts.Session, opts.LegacySession), os.Getenv),
+		Home:      home,
+		DatabasePath: cmp.Or(os.Getenv("JACAZUL_FLOW_DATABASE_PATH"),
+			filepath.Join(home, "projects", id, "flow.sqlite3")),
+	}
+	return env, filepath.Join(environment.Home(opts.Home, os.Getenv), ".task", id)
+}
+
 // engine runs args in the embedded engine with the context the launcher
 // resolved, and returns the engine's exit status. The engine's output,
 // ACTION: guidance included, reaches the operator unchanged. Before any
 // command but migrate, opening the project settles its storage; init is
 // that opening and nothing more.
-//
-// The flow database lives under ~/.jacazul/projects; --home and
-// JACAZUL_HOME still name the legacy runtime home, whose .task silo is
-// only read.
 func engine(opts Options, args []string, stdout, stderr io.Writer) int {
 	if flag := refusedFlag(args); flag != "" {
 		fmt.Fprintf(stderr, "❌ jacazul flow: %s is set by jacazul, so the command uses the database opening settled\n", flag)
@@ -89,21 +101,13 @@ func engine(opts Options, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "❌ jacazul flow: %v\n", err)
 		return 1
 	}
-	home := filepath.Join(os.Getenv("HOME"), ".jacazul")
-	env := flow.Env{
-		ProjectID: id.ID,
-		SessionID: environment.Session(cmp.Or(opts.Session, opts.LegacySession), os.Getenv),
-		Home:      home,
-		DatabasePath: cmp.Or(os.Getenv("JACAZUL_FLOW_DATABASE_PATH"),
-			filepath.Join(home, "projects", id.ID, "flow.sqlite3")),
-	}
+	env, silo := flowEnv(opts, id.ID)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	streams := flow.Streams{Stdin: os.Stdin, Stdout: stdout, Stderr: stderr}
 
 	// A launcher outside a checkout finds task on PATH all the same.
 	root, _ := checkout()
-	silo := filepath.Join(environment.Home(opts.Home, os.Getenv), ".task", id.ID)
 	// A dry run only shows what opening would do, whatever the command.
 	if opts.Dry || os.Getenv("DRY") != "" {
 		return openStorage(ctx, root, silo, env, streams, true, opts.Verbose)
