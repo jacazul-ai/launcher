@@ -213,16 +213,66 @@ stop writing to migrated silos.
 
 | Flow database | Taskwarrior silo | `task` binary | What `jacazul` does |
 |---|---|---|---|
-| exists | any | any | Uses the flow database. |
+| exists | any | any | Opens it with `flow.Init`, which upgrades its schema when needed. |
 | missing | exists | found | Runs the engine's migration, then uses the engine. |
 | missing | exists | missing | Asks: install Taskwarrior, or proceed without the migration. |
-| missing | missing | any | Creates a new flow database. |
+| missing | missing | any | Creates a new flow database with `flow.Init`. |
+
+`jacazul` creates and upgrades the database itself, through `flow.Init`,
+and says so on stderr, so a database never appears without a word:
+
+```text
+🐊 jacazul flow: created the project database at <path> (schema v16)
+🐊 jacazul flow: upgraded the project database at <path> from schema v15 to v16
+```
+
+A current database opens in silence. `flow.Init` errors (a schema newer
+than this `jacazul`, a database at both the legacy and the current path)
+carry their own `ACTION:` and are printed as they are.
+
+**The silo is never written, moved, or deleted; the operator removes it.**
+While it stays in place next to a flow database that did not come from
+migrating it, every run warns on stderr and goes on:
+
+```text
+⚠️  jacazul flow: the Taskwarrior data at <silo> is still in place, and <database> did not come from migrating it
+ACTION: The flow database is the one in use. Once you no longer need the Taskwarrior data, move <silo> out of the way.
+```
+
+"Came from migrating it" is the origin the migration records in the
+database (`InitResult.Origin`), compared with the silo's canonical path
+(absolute, symbolic links resolved).
 
 Proceeding without the migration creates a new, empty flow database and
-leaves the Taskwarrior silo untouched; both stay. The prompt states the
+leaves the Taskwarrior silo untouched; both stay, so the warning above
+shows on every run until the silo moves out. The prompt states the
 consequence before the choice: the engine refuses to migrate onto an
-existing database, so a later migration needs a rollback or a clean target,
-and that is the operator's call.
+existing database.
+
+`jacazul flow init` is this opening and nothing more: it creates or
+upgrades the database, warns about the silo, and runs no engine command.
+
+The engine's global options that take a value would point it at another
+database than the one opening settled, so `jacazul flow` refuses them
+before `--`, in both spellings (`--project x`, `--project=x`), and its
+`ACTION:` names what to use instead:
+
+| Engine option | Use instead |
+|---|---|
+| `--project`, `--session` | `jacazul --project <ID>`, `jacazul --session <ID>` before `flow` |
+| `--database-path`, `--home` | `JACAZUL_FLOW_DATABASE_PATH` |
+| `--taskdata` | `jacazul --home <DIR>`; `jacazul` reads the silo itself |
+| `--task-binary` | `JACAZUL_REAL_TASK` |
+
+With those refused, the engine command is the first argument that is not
+a flag, so `jacazul flow -v status` opens storage and `jacazul flow -v
+info` does not. A test reads the pinned engine's help and fails when a new
+value-taking option appears.
+
+`jacazul --verbose flow <command>` prints what opening found and decided
+(database, silo, `task` binary, action) on stderr on a real run, says when
+the database is current, and passes `-v` to the engine. It is long-only:
+`-v` is the launcher's `--version`.
 
 The rarer paths:
 
@@ -235,7 +285,8 @@ The rarer paths:
   prompt stops with `ACTION:` instead of waiting for an answer.
 - The migration report goes to stderr, so the output of the command that
   triggered it stays clean.
-- `info`, `help` and `--version` open no storage and trigger nothing.
+- `info`, `help`, and `--help` or `--version` before the command open no
+  storage and trigger nothing.
 - `jacazul flow migrate taskwarrior` without `--source` exports the same
   copy; the operator's `--dry-run` or `--apply` pass through.
 - `jacazul --dry flow <command>` (or `DRY=true`) prints the database, the
@@ -290,6 +341,10 @@ type Streams struct {
 }
 
 func EnvFromOS() Env // standalone mains only; jacazul must not use it
+
+// Init creates, moves or upgrades the project database and prints
+// nothing; Origin is set when MigrateTaskwarrior wrote the database.
+func Init(ctx context.Context, env flow.Env) (flow.InitResult, error)
 ```
 
 `Run` never calls `os.Exit`, never reads the process environment or `os.Args`,
