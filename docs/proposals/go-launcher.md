@@ -358,8 +358,14 @@ symlinks, is `<checkout>/bin/jacazul`, and its parent is the checkout.
 - It works for `make build` and for the `~/bin` link, from any project
   directory: the project comes from the working directory, the skills from
   the checkout the binary was built in.
-- A binary outside a checkout (`go install`, a release download) has no
-  `skills/` next to it and stops with an instruction.
+- `JACAZUL_ROOT` names the checkout outright and wins over the binary's
+  path; a value without `skills/` stops and names the variable.
+- `go run ./cmd/jacazul` builds the binary in the Go build cache, so when
+  the binary's path finds no checkout, the launcher walks up from the
+  working directory to the nearest directory whose `go.mod` declares
+  `github.com/jacazul-ai/launcher` and that holds `skills/`.
+- Any other binary outside a checkout (`go install`, a release download)
+  stops with an instruction.
 - The lookup leaves the launcher when the hatch embeds both the skills and
   the extension; from then on the binary needs no checkout.
 

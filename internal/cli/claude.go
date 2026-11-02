@@ -227,6 +227,12 @@ func runClaude(opts Options, args []string, stdout, stderr io.Writer) int {
 // parent. Temporary: it goes away once the skills and extensions are
 // embedded in the binary.
 func checkout() (string, error) {
+	if root := os.Getenv("JACAZUL_ROOT"); root != "" {
+		if !isDir(filepath.Join(root, "skills")) {
+			return "", fmt.Errorf("JACAZUL_ROOT=%s has no skills/; point it at a launcher checkout or unset it", root)
+		}
+		return root, nil
+	}
 	exe, err := executable()
 	if err != nil {
 		return "", err
@@ -235,12 +241,34 @@ func checkout() (string, error) {
 		exe = real
 	}
 	root := filepath.Dir(filepath.Dir(exe))
-	if !isDir(filepath.Join(root, "skills")) {
-		return "", fmt.Errorf("no launcher checkout around %s (%s has no skills/); "+
-			"until skills are embedded in the binary, run 'make build' in a checkout "+
-			"and launch its bin/jacazul or a link to it", exe, root)
+	if isDir(filepath.Join(root, "skills")) {
+		return root, nil
 	}
-	return root, nil
+	// go run builds the binary in the Go build cache: look for this module
+	// from the working directory instead.
+	if cwd, err := os.Getwd(); err == nil {
+		for dir := cwd; ; dir = filepath.Dir(dir) {
+			if isDir(filepath.Join(dir, "skills")) && isLauncherModule(filepath.Join(dir, "go.mod")) {
+				return dir, nil
+			}
+			if dir == filepath.Dir(dir) {
+				break
+			}
+		}
+	}
+	return "", fmt.Errorf("no launcher checkout around %s (%s has no skills/); "+
+		"until skills are embedded in the binary, run 'make build' in a checkout "+
+		"and launch its bin/jacazul or a link to it, or go run ./cmd/jacazul from the checkout", exe, root)
+}
+
+// isLauncherModule reports whether the go.mod at path declares this module.
+func isLauncherModule(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	first, _, _ := strings.Cut(string(data), "\n")
+	return strings.TrimSpace(first) == "module github.com/jacazul-ai/launcher"
 }
 
 // claudeBinary prefers the native installer's ~/.local/bin/claude, then

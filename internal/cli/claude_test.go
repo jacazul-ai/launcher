@@ -46,7 +46,7 @@ var sessionVars = []string{
 	"JACAZUL_CHAT_LANG", "JACAZUL_DATA_LANG", "JACAZUL_HARNESS", "JACAZUL_MODEL",
 	"JACAZUL_FOCUS_PLAN", "JACAZUL_FOCUS_TASK", "CLAUDE_CONFIG_DIR",
 	"TASKRC", "TASKDATA", "DRY", "DEBUG", "CONTEXT_GIT_USER", "JACAZUL_ENV_INITIALIZED",
-	"JACAZUL_FLOW_DATABASE_PATH", "JACAZUL_REAL_TASK",
+	"JACAZUL_FLOW_DATABASE_PATH", "JACAZUL_REAL_TASK", "JACAZUL_ROOT",
 }
 
 type launch struct {
@@ -290,6 +290,65 @@ func TestClaudeWithoutACheckoutStopsWithAnInstruction(t *testing.T) {
 	}
 	if _, err := os.Stat(l.marker); err == nil {
 		t.Fatal("claude ran without a checkout")
+	}
+}
+
+// go run builds the binary in the Go build cache, far from the checkout,
+// so the launcher finds the checkout from the working directory: the
+// nearest directory up that is this module and holds skills/. Another
+// module with a skills/ directory is not the launcher.
+func TestClaudeUnderGoRunFindsTheCheckoutFromTheWorkingDirectory(t *testing.T) {
+	for name, module := range map[string]string{
+		"launcher":     "github.com/jacazul-ai/launcher",
+		"other module": "example.com/other",
+	} {
+		t.Run(name, func(t *testing.T) {
+			l := setup(t)
+			executable = func() (string, error) {
+				return filepath.Join(t.TempDir(), "go-build", "ba", "jacazul"), nil
+			}
+			if err := os.WriteFile(filepath.Join(l.root, "go.mod"), []byte("module "+module+"\n\ngo 1.25.0\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			below := filepath.Join(l.root, "cmd", "jacazul")
+			if err := os.MkdirAll(below, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			t.Chdir(below)
+
+			code, _, stderr := run(t, "claude")
+			_, err := os.Stat(l.marker)
+			if module == "github.com/jacazul-ai/launcher" && (code != 0 || err != nil) {
+				t.Fatalf("exit %d, stderr %q, claude ran: %v", code, stderr, err == nil)
+			}
+			if module != "github.com/jacazul-ai/launcher" && (code != 1 || err == nil) {
+				t.Fatalf("exit %d, claude ran %v, want a stop: another module is not the launcher", code, err == nil)
+			}
+		})
+	}
+}
+
+// JACAZUL_ROOT names the checkout outright, wherever the binary and the
+// working directory are; a value without skills/ stops and names it.
+func TestClaudeTakesTheCheckoutFromJacazulRoot(t *testing.T) {
+	l := setup(t)
+	executable = func() (string, error) {
+		return filepath.Join(t.TempDir(), "go-build", "ba", "jacazul"), nil
+	}
+
+	t.Setenv("JACAZUL_ROOT", l.root)
+	if code, _, stderr := run(t, "claude"); code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	if _, err := os.Stat(l.marker); err != nil {
+		t.Fatal("claude did not run with JACAZUL_ROOT set")
+	}
+
+	empty := t.TempDir()
+	t.Setenv("JACAZUL_ROOT", empty)
+	code, _, stderr := run(t, "claude")
+	if code != 1 || !strings.Contains(stderr, "JACAZUL_ROOT") || !strings.Contains(stderr, empty) {
+		t.Fatalf("exit %d, stderr %q, want a stop naming JACAZUL_ROOT", code, stderr)
 	}
 }
 
