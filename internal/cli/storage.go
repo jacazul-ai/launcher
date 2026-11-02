@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -121,13 +122,12 @@ func openStorage(ctx context.Context, root, silo string, env flow.Env, streams f
 		}
 		return initDatabase(ctx, silo, data, env, streams, verbose)
 	case dry:
-		return migrate(ctx, task, silo, env, streams, []string{"migrate", "taskwarrior", "--dry-run"})
+		return migrate(ctx, task, silo, env, streams.Stdout, streams.Stderr, false)
 	}
 	// The migration report goes to stderr, so the output of the command
 	// that triggered it stays clean for whoever reads it.
-	report := flow.Streams{Stdin: streams.Stdin, Stdout: streams.Stderr, Stderr: streams.Stderr}
 	fmt.Fprintf(streams.Stderr, "🔄 jacazul flow: migrating %s into %s\n", silo, env.DatabasePath)
-	return migrate(ctx, task, silo, env, report, []string{"migrate", "taskwarrior", "--apply"})
+	return migrate(ctx, task, silo, env, streams.Stderr, streams.Stderr, true)
 }
 
 // initDatabase creates the project database or brings its schema up to
@@ -158,19 +158,37 @@ func initDatabase(ctx context.Context, silo string, data bool, env flow.Env, str
 }
 
 // explicitMigration reports whether args ask the engine to migrate
-// Taskwarrior data that jacazul must export first: no --source snapshot
-// and no --issues listing.
+// Taskwarrior data that jacazul must export first: no --source snapshot,
+// no --issues listing and no help.
 func explicitMigration(args []string) bool {
 	name, i := command(args)
 	if name != "migrate" || i+1 >= len(args) || args[i+1] != "taskwarrior" {
 		return false
 	}
 	for _, arg := range args[i+2:] {
-		if arg == "--issues" || arg == "--source" || strings.HasPrefix(arg, "--source=") {
+		if slices.Contains([]string{"--issues", "--source", "--help", "-h"}, arg) || strings.HasPrefix(arg, "--source=") {
 			return false
 		}
 	}
 	return true
+}
+
+// migrationOptions reads an explicit migration's options: whether it
+// applies, and the first option the library migration has no place for,
+// or "" when there is none. Without --apply it is a dry-run, as for the
+// engine.
+func migrationOptions(args []string) (apply bool, other string) {
+	_, i := command(args)
+	for _, arg := range args[i+2:] {
+		switch arg {
+		case "--apply":
+			apply = true
+		case "--dry-run", "-v", "--verbose":
+		default:
+			return apply, arg
+		}
+	}
+	return apply, ""
 }
 
 // hasTaskwarrior reports whether dir holds a Taskwarrior database: the
@@ -214,14 +232,21 @@ func installHint(goos string) string {
 	}
 }
 
-// migrate exports a temporary copy of silo with task and runs the
-// engine's migration args on the export. Taskwarrior may write to the
-// directory it reads even for an export, so it only ever sees the copy,
-// and with garbage collection, recurrence and hooks off. A failed apply
-// leaves no database behind, so the next run can try again.
-func migrate(ctx context.Context, task, silo string, env flow.Env, streams flow.Streams, args []string) int {
+// migrate exports a temporary copy of silo with task and migrates it with
+// flow.MigrateTaskwarrior: a dry-run, then the apply when apply is set.
+// Taskwarrior may write to the directory it reads even for an export, so
+// it only ever sees the copy, and with garbage collection, recurrence and
+// hooks off. The copy is also where the engine reads focus, sessions and
+// handoff notes, and the silo's canonical path is the origin the database
+// records. The report goes to out.
+//
+// ERROR issues never stop the apply: every issue is printed, each naming
+// its task, and an ACTION: sends the agent to them. Any other failure
+// stops with the engine's own guidance and, for the apply, leaves no
+// database behind, so the next run can try again.
+func migrate(ctx context.Context, task, silo string, env flow.Env, out, stderr io.Writer, apply bool) int {
 	fail := func(format string, a ...any) int {
-		fmt.Fprintf(streams.Stderr, "❌ jacazul flow: "+format+"\n", a...)
+		fmt.Fprintf(stderr, "❌ jacazul flow: "+format+"\n", a...)
 		return 1
 	}
 	work, err := os.MkdirTemp("", "jacazul-migrate-")
@@ -245,32 +270,51 @@ func migrate(ctx context.Context, task, silo string, env flow.Env, streams flow.
 	cmd := exec.CommandContext(ctx, task, "rc.data.location="+copied,
 		"rc.gc=off", "rc.recurrence=off", "rc.hooks=off", "rc.verbose=nothing", "rc.confirmation=off", "export")
 	cmd.Env = append(os.Environ(), "TASKDATA="+copied, "TASKRC="+taskrc)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	var exported, taskErr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &exported, &taskErr
 	if err := cmd.Run(); err != nil {
 		return fail("Taskwarrior export failed: %v: %s\nACTION: Fix what task reports and run jacazul flow again; the Taskwarrior data was not changed.",
-			err, strings.TrimSpace(stderr.String()))
+			err, strings.TrimSpace(taskErr.String()))
 	}
-	if !json.Valid(stdout.Bytes()) {
+	if !json.Valid(exported.Bytes()) {
 		return fail("the Taskwarrior export is not valid JSON\nACTION: Run 'taskp export' to see what task prints, fix it and run jacazul flow again.")
 	}
 	export := filepath.Join(work, "export.json")
-	if err := os.WriteFile(export, stdout.Bytes(), 0o600); err != nil {
+	if err := os.WriteFile(export, exported.Bytes(), 0o600); err != nil {
 		return fail("%v", err)
 	}
 
-	args = append(slices.Clip(args), "--source", export)
-	if !slices.ContainsFunc(args, func(a string) bool { return strings.HasPrefix(a, "--legacy-data-dir") }) {
-		args = append(args, "--legacy-data-dir", copied)
+	options := flow.MigrateOptions{Source: export, Origin: canonical(silo), LegacyDataDir: copied}
+	result, err := migrateEngine(ctx, env, options)
+	if apply && (err == nil || errors.Is(err, flow.ErrMigrationRecordErrors)) {
+		options.Apply = true
+		result, err = migrateEngine(ctx, env, options)
 	}
-	created := !exists(env.DatabasePath)
-	code := runEngine(ctx, args, env, streams)
-	if code != 0 && created && slices.Contains(args, "--apply") {
-		for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
-			os.Remove(env.DatabasePath + suffix)
+	if err != nil && !errors.Is(err, flow.ErrMigrationRecordErrors) {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+
+	errs := 0
+	for _, issue := range result.Issues {
+		fmt.Fprintf(out, "%s: %s\n", issue.Severity, issue.Message)
+		if issue.Severity == "ERROR" {
+			errs++
 		}
 	}
-	return code
+	r := result.Records
+	counts := fmt.Sprintf("created %d, updated %d, unchanged %d, dependencies %d, annotations %d, tags %d, issues %d",
+		r.Created, r.Updated, r.Unchanged, r.Dependencies, r.Annotations, r.Tags, r.Issues)
+	if apply {
+		fmt.Fprintf(out, "🐊 jacazul flow: migrated %s into %s (%s)\n", silo, env.DatabasePath, counts)
+	} else {
+		fmt.Fprintf(out, "🐊 jacazul flow (dry): would migrate %s (%s); nothing is written\n", silo, counts)
+	}
+	if errs > 0 {
+		fmt.Fprintf(out, "⚠️  jacazul flow: %d ERROR issues; the records were migrated as each line above says\n", errs)
+		fmt.Fprintln(out, "ACTION: Check each task an ERROR line names (task <uuid>) in the Taskwarrior data and fix it in the flow database if it matters.")
+	}
+	return 0
 }
 
 // canonical is path made absolute with its symbolic links resolved, the one

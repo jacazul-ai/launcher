@@ -24,6 +24,10 @@ type flowRunner func(context.Context, []string, flow.Env, flow.Streams) int
 // runEngine is the embedded engine; tests replace it.
 var runEngine flowRunner = flow.Run
 
+// migrateEngine is the embedded engine's migration; tests replace it to
+// make it fail.
+var migrateEngine = flow.MigrateTaskwarrior
+
 // engineValueFlags are the engine's global options that take a value,
 // with what to use instead. Each one would point the engine at another
 // project, session or database than the one opening settled.
@@ -108,13 +112,19 @@ func engine(opts Options, args []string, stdout, stderr io.Writer) int {
 		args = append([]string{"-v"}, args...)
 	}
 	if explicitMigration(args) && hasTaskwarrior(silo) {
+		apply, other := migrationOptions(args)
+		if other != "" {
+			fmt.Fprintf(stderr, "❌ jacazul flow: %s has no place in the migration jacazul runs from the project's Taskwarrior data\n", other)
+			fmt.Fprintln(stderr, "ACTION: Run it with --dry-run or --apply only, or export the data yourself and pass it with --source to use the engine's own options.")
+			return 1
+		}
 		task := findTask(root)
 		if task == "" {
 			fmt.Fprintln(stderr, "❌ jacazul flow: no task binary was found to export the Taskwarrior data")
 			fmt.Fprintln(stderr, "ACTION: Install Taskwarrior, or pass an export with --source.")
 			return 1
 		}
-		return migrate(ctx, task, silo, env, streams, args)
+		return migrate(ctx, task, silo, env, stdout, stderr, apply)
 	}
 	if name, _ := command(args); opensStorage(args) && name != "migrate" {
 		if code := openStorage(ctx, root, silo, env, streams, false, opts.Verbose); code != 0 || name == "init" {

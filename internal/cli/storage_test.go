@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,30 +13,34 @@ import (
 )
 
 // opening is one project being opened: its Taskwarrior silo, its flow
-// database and the engine calls the launcher makes.
+// database, the engine commands the launcher runs and the migrations it
+// asks for.
 type opening struct {
-	id       string
-	home     string // the flow home, ~/.jacazul
-	silo     string
-	database string
-	calls    *[][]string
-	exports  *[]string // the export each migration read
+	id         string
+	home       string // the flow home, ~/.jacazul
+	silo       string
+	database   string
+	calls      *[][]string
+	migrations *[]flow.MigrateOptions
+	exports    *[]string // the export each migration read
 }
 
-// openProject sets up a project with a fake engine that records its
-// arguments and, for a migration, the export it was given. migrateCode is
-// what the migration returns; every other call returns 0.
-func openProject(t *testing.T, migrateCode int) opening {
+// openProject sets up a project with a fake engine that records the
+// commands it is given. Migrations go to the pinned engine, recorded with
+// the export they read, unless fail is set: then a migration writes
+// nothing and returns fail.
+func openProject(t *testing.T, fail error) opening {
 	t.Helper()
 	l := setup(t)
 	id := filepath.Base(filepath.Dir(l.project)) + "_" + filepath.Base(l.project)
 	o := opening{
-		id:       id,
-		home:     filepath.Join(l.home, ".jacazul"),
-		silo:     filepath.Join(l.home, ".jacazul-ai", ".task", id),
-		database: filepath.Join(l.home, ".jacazul", "projects", id, "flow.sqlite3"),
-		calls:    &[][]string{},
-		exports:  &[]string{},
+		id:         id,
+		home:       filepath.Join(l.home, ".jacazul"),
+		silo:       filepath.Join(l.home, ".jacazul-ai", ".task", id),
+		database:   filepath.Join(l.home, ".jacazul", "projects", id, "flow.sqlite3"),
+		calls:      &[][]string{},
+		migrations: &[]flow.MigrateOptions{},
+		exports:    &[]string{},
 	}
 	saved := runEngine
 	runEngine = func(_ context.Context, args []string, env flow.Env, _ flow.Streams) int {
@@ -43,31 +48,26 @@ func openProject(t *testing.T, migrateCode int) opening {
 		if env.DatabasePath != o.database {
 			t.Errorf("engine database %q, want %q", env.DatabasePath, o.database)
 		}
-		if len(args) > 0 && args[0] == "migrate" {
-			i := slices.Index(args, "--source")
-			if i < 0 || i+1 >= len(args) {
-				t.Fatalf("migration without --source: %q", args)
-			}
-			data, err := os.ReadFile(args[i+1])
-			if err != nil {
-				t.Fatalf("export unreadable during the migration: %v", err)
-			}
-			*o.exports = append(*o.exports, string(data))
-			if !slices.Contains(args, "--apply") {
-				return migrateCode
-			}
-			// An apply creates the database before it can fail.
-			if err := os.MkdirAll(filepath.Dir(o.database), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(o.database, nil, 0o644); err != nil {
-				t.Fatal(err)
-			}
-			return migrateCode
-		}
 		return 0
 	}
 	t.Cleanup(func() { runEngine = saved })
+	savedMigrate := migrateEngine
+	migrateEngine = func(ctx context.Context, env flow.Env, options flow.MigrateOptions) (flow.MigrateResult, error) {
+		*o.migrations = append(*o.migrations, options)
+		if env.DatabasePath != o.database {
+			t.Errorf("migration database %q, want %q", env.DatabasePath, o.database)
+		}
+		data, err := os.ReadFile(options.Source)
+		if err != nil {
+			t.Fatalf("export unreadable during the migration: %v", err)
+		}
+		*o.exports = append(*o.exports, string(data))
+		if fail != nil {
+			return flow.MigrateResult{}, fail
+		}
+		return flow.MigrateTaskwarrior(ctx, env, options)
+	}
+	t.Cleanup(func() { migrateEngine = savedMigrate })
 	interactive = func() bool { return false }
 	t.Cleanup(func() { interactive = func() bool { return isTerminal(os.Stdin) } })
 	return o
@@ -167,7 +167,7 @@ func (o opening) siloUntouched(t *testing.T) {
 }
 
 func TestOpeningUsesAnExistingDatabase(t *testing.T) {
-	o := openProject(t, 0)
+	o := openProject(t, nil)
 	o.withSilo(t)
 	record := fakeTask(t, "")
 	o.withDatabase(t, canonical(o.silo))
@@ -188,7 +188,7 @@ func TestOpeningUsesAnExistingDatabase(t *testing.T) {
 // export uses the Jacazul taskrc whatever the operator's own says, so the
 // UDAs keep their types.
 func TestOpeningMigratesACopyOfTheSilo(t *testing.T) {
-	o := openProject(t, 0)
+	o := openProject(t, nil)
 	o.withSilo(t)
 	t.Setenv("TASKRC", filepath.Join(t.TempDir(), "operator.taskrc"))
 	record := fakeTask(t, `
@@ -198,13 +198,20 @@ for a in "$@"; do
 done
 echo touched > "$dir/taskchampion.sqlite3"
 echo gc > "$dir/completed.data"
-echo '[{"uuid":"8e1d2c4a-0000-4000-8000-000000000001","description":"Ship it"}]'
+echo '[{"uuid":"8e1d2c4a-0000-4000-8000-000000000001","description":"Ship it","status":"pending","entry":"20261101T000000Z"}]'
 `)
 
-	if code, _, stderr := run(t, "flow", "status"); code != 0 {
+	code, stdout, stderr := run(t, "flow", "status")
+	if code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, stderr)
 	}
 	o.siloUntouched(t)
+	if stdout != "" {
+		t.Errorf("stdout %q, want the migration report on stderr", stdout)
+	}
+	if !strings.Contains(stderr, "migrated "+o.silo) || !strings.Contains(stderr, "(created ") {
+		t.Errorf("stderr %q lacks the migration summary", stderr)
+	}
 
 	copied := dataDir(t, record)
 	if copied == o.silo {
@@ -220,29 +227,66 @@ echo '[{"uuid":"8e1d2c4a-0000-4000-8000-000000000001","description":"Ship it"}]'
 		}
 	}
 
-	calls := *o.calls
-	if len(calls) != 2 {
-		t.Fatalf("engine calls %q, want the migration then status", calls)
+	// A dry-run, then the apply, both on the copy, with the silo's
+	// canonical path as the origin.
+	migrations := *o.migrations
+	if len(migrations) != 2 || migrations[0].Apply || !migrations[1].Apply {
+		t.Fatalf("migrations %+v, want a dry-run then an apply", migrations)
 	}
-	migrate := calls[0]
-	if !slices.Equal(migrate[:2], []string{"migrate", "taskwarrior"}) || !slices.Contains(migrate, "--apply") {
-		t.Errorf("migration call %q", migrate)
+	for _, m := range migrations {
+		if m.Origin != canonical(o.silo) {
+			t.Errorf("origin %q, want %q", m.Origin, canonical(o.silo))
+		}
+		if m.LegacyDataDir != copied {
+			t.Errorf("sessions read from %q, want the copy %s", m.LegacyDataDir, copied)
+		}
 	}
-	if i := slices.Index(migrate, "--legacy-data-dir"); i < 0 || migrate[i+1] != copied {
-		t.Errorf("migration %q does not read the sessions from the copy %s", migrate, copied)
+	if !strings.Contains((*o.exports)[1], "Ship it") {
+		t.Errorf("migration read %q, want the task export", (*o.exports)[1])
 	}
-	if !strings.Contains((*o.exports)[0], "Ship it") {
-		t.Errorf("migration read %q, want the task export", (*o.exports)[0])
+	if want := [][]string{{"status"}}; !slices.EqualFunc(*o.calls, want, slices.Equal) {
+		t.Errorf("engine calls %q, want %q", *o.calls, want)
 	}
-	if !slices.Equal(calls[1], []string{"status"}) {
-		t.Errorf("after the migration the engine ran %q, want status", calls[1])
+
+	// The database came from this silo: the next run neither migrates nor
+	// warns.
+	if code, stdout, stderr := run(t, "flow", "status"); code != 0 || stdout != "" || stderr != "" {
+		t.Errorf("second run: exit %d, stdout %q, stderr %q, want a silent run", code, stdout, stderr)
 	}
+	if len(*o.migrations) != 2 {
+		t.Errorf("the second run migrated again: %+v", *o.migrations)
+	}
+}
+
+// ERROR issues never stop the migration: the apply runs, every issue is
+// printed with the task it names, and an ACTION: sends the agent to them.
+func TestOpeningMigratesDespiteRecordErrors(t *testing.T) {
+	o := openProject(t, nil)
+	o.withSilo(t)
+	fakeTask(t, `echo '[{"uuid":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","description":"Late","status":"pending","entry":"20261101T000000Z","due":"not-a-date"}]'`)
+
+	code, _, stderr := run(t, "flow", "status")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	for _, want := range []string{"ERROR", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "ACTION:"} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("stderr lacks %q:\n%s", want, stderr)
+		}
+	}
+	if !exists(o.database) {
+		t.Error("no database after a migration with ERROR issues")
+	}
+	if want := [][]string{{"status"}}; !slices.EqualFunc(*o.calls, want, slices.Equal) {
+		t.Errorf("engine calls %q, want %q", *o.calls, want)
+	}
+	o.siloUntouched(t)
 }
 
 // Opening creates the database itself and says so, so a new database never
 // appears without a word; the command's own output stays on stdout.
 func TestOpeningWithoutDataCreatesTheDatabase(t *testing.T) {
-	o := openProject(t, 0)
+	o := openProject(t, nil)
 	noTask(t)
 
 	code, stdout, stderr := run(t, "flow", "status")
@@ -264,7 +308,7 @@ func TestOpeningWithoutDataCreatesTheDatabase(t *testing.T) {
 }
 
 func TestOpeningACurrentDatabaseIsSilent(t *testing.T) {
-	o := openProject(t, 0)
+	o := openProject(t, nil)
 	o.withDatabase(t, "")
 
 	code, stdout, stderr := run(t, "flow", "status")
@@ -282,7 +326,7 @@ func TestOpeningWarnsWhileTheSiloOutlivesAForeignDatabase(t *testing.T) {
 		"another silo": func(o opening) string { return canonical(filepath.Join(filepath.Dir(o.silo), "other")) },
 	} {
 		t.Run(name, func(t *testing.T) {
-			o := openProject(t, 0)
+			o := openProject(t, nil)
 			o.withSilo(t)
 			o.withDatabase(t, origin(o))
 			record := fakeTask(t, "")
@@ -310,7 +354,7 @@ func TestOpeningWarnsWhileTheSiloOutlivesAForeignDatabase(t *testing.T) {
 // A database migrated from this very silo is the right one: no warning,
 // even when the launcher reaches the silo through a symbolic link.
 func TestOpeningADatabaseMigratedFromTheSiloIsSilent(t *testing.T) {
-	o := openProject(t, 0)
+	o := openProject(t, nil)
 	o.withSilo(t)
 	o.withDatabase(t, canonical(o.silo))
 	link := filepath.Join(t.TempDir(), "home")
@@ -328,7 +372,7 @@ func TestOpeningADatabaseMigratedFromTheSiloIsSilent(t *testing.T) {
 // jacazul flow init is opening the project: it creates the database and
 // says so, and the engine is not asked to do it again.
 func TestFlowInitIsOpeningTheProject(t *testing.T) {
-	o := openProject(t, 0)
+	o := openProject(t, nil)
 
 	code, _, stderr := run(t, "flow", "init")
 	if code != 0 {
@@ -349,7 +393,7 @@ func TestFlowInitIsOpeningTheProject(t *testing.T) {
 // Without task and without a terminal there is nobody to ask, so the
 // launcher stops instead of choosing for the operator.
 func TestOpeningWithoutTaskOrTerminalStops(t *testing.T) {
-	o := openProject(t, 0)
+	o := openProject(t, nil)
 	o.withSilo(t)
 	noTask(t)
 
@@ -377,7 +421,7 @@ func TestOpeningWithoutTaskAsksTheOperator(t *testing.T) {
 		"install": {answer: "i\n", code: 1, output: "install"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			o := openProject(t, 0)
+			o := openProject(t, nil)
 			o.withSilo(t)
 			noTask(t)
 			interactive = func() bool { return true }
@@ -417,7 +461,7 @@ func TestOpeningStopsWhenTheExportFails(t *testing.T) {
 		"invalid json": "echo 'not json'",
 	} {
 		t.Run(name, func(t *testing.T) {
-			o := openProject(t, 0)
+			o := openProject(t, nil)
 			o.withSilo(t)
 			fakeTask(t, script)
 
@@ -428,8 +472,8 @@ func TestOpeningStopsWhenTheExportFails(t *testing.T) {
 			if name == "task fails" && !strings.Contains(stderr, "database is locked") {
 				t.Errorf("stderr %q hides task's own message", stderr)
 			}
-			if len(*o.calls) != 0 {
-				t.Errorf("engine ran: %q", *o.calls)
+			if len(*o.calls) != 0 || len(*o.migrations) != 0 {
+				t.Errorf("engine ran: %q, migrations %+v", *o.calls, *o.migrations)
 			}
 			o.siloUntouched(t)
 		})
@@ -441,7 +485,7 @@ func TestOpeningStopsWhenTheExportFails(t *testing.T) {
 func TestOpeningDryRunWritesNothing(t *testing.T) {
 	for name, flag := range map[string][]string{"flag": {"--dry"}, "environment": nil} {
 		t.Run(name, func(t *testing.T) {
-			o := openProject(t, 0)
+			o := openProject(t, nil)
 			o.withSilo(t)
 			record := fakeTask(t, `echo '[]'`)
 			if flag == nil {
@@ -452,14 +496,16 @@ func TestOpeningDryRunWritesNothing(t *testing.T) {
 			if code != 0 {
 				t.Fatalf("exit %d, stderr %q", code, stderr)
 			}
-			for _, want := range []string{o.database, o.silo, "migrate", filepath.Dir(record)} {
+			for _, want := range []string{o.database, o.silo, "migrate", filepath.Dir(record), "would migrate"} {
 				if !strings.Contains(stdout, want) {
 					t.Errorf("dry output lacks %q:\n%s", want, stdout)
 				}
 			}
-			calls := *o.calls
-			if len(calls) != 1 || !slices.Contains(calls[0], "--dry-run") || slices.Contains(calls[0], "--apply") {
-				t.Fatalf("engine calls %q, want one migration dry-run and no command", calls)
+			if len(*o.calls) != 0 {
+				t.Errorf("engine ran %q in a dry run", *o.calls)
+			}
+			if m := *o.migrations; len(m) != 1 || m[0].Apply {
+				t.Fatalf("migrations %+v, want one dry-run", m)
 			}
 			if dataDir(t, record) == o.silo {
 				t.Error("dry-run exported the silo itself, not a copy")
@@ -473,7 +519,7 @@ func TestOpeningDryRunWritesNothing(t *testing.T) {
 }
 
 func TestOpeningDryRunWithADatabaseRunsNothing(t *testing.T) {
-	o := openProject(t, 0)
+	o := openProject(t, nil)
 	if err := os.MkdirAll(filepath.Dir(o.database), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -490,43 +536,78 @@ func TestOpeningDryRunWithADatabaseRunsNothing(t *testing.T) {
 	}
 }
 
-// An explicit migration without --source reads the same copy the
-// automatic one does; the operator's flags pass through.
-func TestExplicitMigrationExportsACopy(t *testing.T) {
-	o := openProject(t, 0)
+// An explicit migration without --source is the automatic one: the same
+// copy, the same library call, so its database carries the origin too.
+// --apply writes; anything else is a dry-run, the engine's default.
+func TestExplicitMigrationGoesThroughTheLibrary(t *testing.T) {
+	for _, tc := range []struct {
+		args  []string
+		apply bool
+	}{
+		{[]string{"--dry-run"}, false},
+		{nil, false},
+		{[]string{"--apply"}, true},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			o := openProject(t, nil)
+			o.withSilo(t)
+			record := fakeTask(t, `echo '[]'`)
+
+			code, _, stderr := run(t, append([]string{"flow", "migrate", "taskwarrior"}, tc.args...)...)
+			if code != 0 {
+				t.Fatalf("exit %d, stderr %q", code, stderr)
+			}
+			if len(*o.calls) != 0 {
+				t.Errorf("engine command ran: %q", *o.calls)
+			}
+			m := *o.migrations
+			if len(m) == 0 || m[len(m)-1].Apply != tc.apply || m[0].Origin != canonical(o.silo) {
+				t.Errorf("migrations %+v, want apply %v from %s", m, tc.apply, canonical(o.silo))
+			}
+			if exists(o.database) != tc.apply {
+				t.Errorf("database exists %v, want %v", exists(o.database), tc.apply)
+			}
+			if dataDir(t, record) == o.silo {
+				t.Error("explicit migration exported the silo itself")
+			}
+			o.siloUntouched(t)
+		})
+	}
+}
+
+// The library has no room for the engine's other migration options, so an
+// explicit migration that asks for one is refused and pointed at --source,
+// the engine's own path.
+func TestExplicitMigrationRefusesOtherOptions(t *testing.T) {
+	o := openProject(t, nil)
 	o.withSilo(t)
 	record := fakeTask(t, `echo '[]'`)
 
-	code, _, stderr := run(t, "flow", "migrate", "taskwarrior", "--dry-run")
-	if code != 0 {
-		t.Fatalf("exit %d, stderr %q", code, stderr)
+	code, _, stderr := run(t, "flow", "migrate", "taskwarrior", "--legacy-map", "map.json")
+	if code != 1 || !strings.Contains(stderr, "--legacy-map") || !strings.Contains(stderr, "ACTION:") {
+		t.Fatalf("exit %d, stderr %q, want a refusal with an ACTION:", code, stderr)
 	}
-	calls := *o.calls
-	if len(calls) != 1 {
-		t.Fatalf("engine calls %q, want the migration only", calls)
+	if len(*o.migrations) != 0 || len(*o.calls) != 0 {
+		t.Errorf("migrations %+v, engine calls %q, want none", *o.migrations, *o.calls)
 	}
-	if !slices.Contains(calls[0], "--dry-run") || slices.Contains(calls[0], "--apply") {
-		t.Errorf("migration %q lost the operator's --dry-run", calls[0])
+	if _, err := os.Stat(record); !os.IsNotExist(err) {
+		t.Error("task ran for a refused migration")
 	}
-	if dataDir(t, record) == o.silo {
-		t.Error("explicit migration exported the silo itself")
-	}
-	o.siloUntouched(t)
 }
 
 // --dry wins over an explicit --apply, and a bare jacazul flow does not
 // crash.
 func TestDryRunNeverApplies(t *testing.T) {
-	o := openProject(t, 0)
+	o := openProject(t, nil)
 	o.withSilo(t)
 	fakeTask(t, `echo '[]'`)
 
 	if code, _, stderr := run(t, "--dry", "flow", "migrate", "taskwarrior", "--apply"); code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, stderr)
 	}
-	for _, call := range *o.calls {
-		if slices.Contains(call, "--apply") {
-			t.Errorf("dry run applied: %q", call)
+	for _, m := range *o.migrations {
+		if m.Apply {
+			t.Errorf("dry run applied: %+v", m)
 		}
 	}
 	if _, err := os.Stat(o.database); !os.IsNotExist(err) {
@@ -539,7 +620,7 @@ func TestDryRunNeverApplies(t *testing.T) {
 func TestOpeningSkipsCommandsWithoutStorage(t *testing.T) {
 	for _, command := range []string{"info", "help", "--help", "--version"} {
 		t.Run(command, func(t *testing.T) {
-			o := openProject(t, 0)
+			o := openProject(t, nil)
 			o.withSilo(t)
 			record := fakeTask(t, `echo '[]'`)
 
@@ -554,19 +635,20 @@ func TestOpeningSkipsCommandsWithoutStorage(t *testing.T) {
 	}
 }
 
-// A failed migration leaves no database behind, so the next run can try
-// again: the engine refuses to migrate onto an existing one.
+// A failed migration stops with the engine's own guidance and leaves no
+// database behind, so the next run can try again: the library refuses to
+// migrate onto an existing one.
 func TestOpeningFailedMigrationLeavesNoDatabase(t *testing.T) {
-	o := openProject(t, 4)
+	o := openProject(t, errors.New("read export: disk on fire\nACTION: Fix the disk."))
 	o.withSilo(t)
 	fakeTask(t, "echo '[]'")
 
-	code, _, _ := run(t, "flow", "status")
-	if code != 4 {
-		t.Errorf("exit %d, want the migration's 4", code)
+	code, _, stderr := run(t, "flow", "status")
+	if code != 1 || !strings.Contains(stderr, "disk on fire\nACTION: Fix the disk.") {
+		t.Errorf("exit %d, stderr %q, want 1 and the engine's guidance", code, stderr)
 	}
-	if len(*o.calls) != 1 {
-		t.Errorf("engine calls %q, want only the migration", *o.calls)
+	if len(*o.calls) != 0 {
+		t.Errorf("engine calls %q, want none", *o.calls)
 	}
 	if _, err := os.Stat(o.database); !os.IsNotExist(err) {
 		t.Errorf("failed migration left %s: %v", o.database, err)
@@ -585,7 +667,7 @@ func TestFlowRefusesEngineValueFlags(t *testing.T) {
 			{"flow", "-v", "status", flag, "x"},
 		} {
 			t.Run(strings.Join(args, " "), func(t *testing.T) {
-				o := openProject(t, 0)
+				o := openProject(t, nil)
 				o.withSilo(t)
 				record := fakeTask(t, `echo '[]'`)
 
@@ -610,7 +692,7 @@ func TestFlowRefusesEngineValueFlags(t *testing.T) {
 
 // After "--" the arguments belong to the command, not to the engine.
 func TestFlowPassesValueFlagsAfterTheSeparator(t *testing.T) {
-	o := openProject(t, 0)
+	o := openProject(t, nil)
 
 	if code, _, stderr := run(t, "flow", "note", "--", "--project", "x"); code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, stderr)
@@ -636,7 +718,7 @@ func TestFlowFindsTheCommandPastLeadingFlags(t *testing.T) {
 		{[]string{"--verbose", "init"}, true},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
-			o := openProject(t, 0)
+			o := openProject(t, nil)
 			noTask(t)
 
 			code, _, stderr := run(t, append([]string{"flow"}, tc.args...)...)
@@ -678,7 +760,7 @@ func TestRefusedFlagsCoverTheEngineHelp(t *testing.T) {
 // --verbose shows what opening found and decided on a real run, on stderr
 // so the command's output stays clean, and makes the engine verbose too.
 func TestVerboseShowsTheOpeningDecision(t *testing.T) {
-	o := openProject(t, 0)
+	o := openProject(t, nil)
 	o.withDatabase(t, "")
 
 	code, stdout, stderr := run(t, "--verbose", "flow", "status")
