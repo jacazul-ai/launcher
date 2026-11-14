@@ -243,8 +243,8 @@ Migrate now? [y/n]:
 and says so on stderr, so a database never appears without a word:
 
 ```text
-🐊 jacazul flow: created the project database at <path> (schema v16)
-🐊 jacazul flow: upgraded the project database at <path> from schema v15 to v16
+🐊 jacazul flow: created the project database at <path> (schema v17)
+🐊 jacazul flow: upgraded the project database at <path> from schema v16 to v17
 ```
 
 A current database opens in silence. `flow.Init` errors (a schema newer
@@ -420,7 +420,7 @@ worked around in `jacazul`.
   `runEngine` seam (`flow.Run` in production). The storage check is
   `internal/cli/storage.go`. The `tw-flow-to-go` branch stub is obsolete. A
   second workflow engine does not grow in the launcher.
-- Both sides use `go 1.25` and `github.com/jessevdk/go-flags v1.6.1`.
+- Both sides use `go 1.26` and `github.com/jessevdk/go-flags v1.6.1`.
 - The engine is never copied, vendored, or shelled out to as a `jczl-flow`
   binary.
 

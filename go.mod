@@ -1,9 +1,9 @@
 module github.com/jacazul-ai/launcher
 
-go 1.25.0
+go 1.26.0
 
 require (
-	github.com/jacazul-ai/flow v0.0.0-20261102054449-f76508933218
+	github.com/jacazul-ai/flow v0.1.0
 	github.com/jessevdk/go-flags v1.6.1
 	modernc.org/sqlite v1.54.0
 )
